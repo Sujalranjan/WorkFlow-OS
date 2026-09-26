@@ -1,0 +1,4 @@
+# Desktop Activity Agent requirements
+requests>=2.31.0
+psutil>=5.9.0
+watchdog>=4.0.0
