@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.dna import _generate_dna_from_events
 from app.api.events import get_event_service
+from app.config import GEMINI_API_KEY
 from app.models.semantic import InterpretationResponse, SemanticWorkflow
 from app.services.event_service import EventService
 from app.services.semantic_engine import SemanticUnderstandingEngine
@@ -20,7 +21,7 @@ def get_semantic_engine() -> SemanticUnderstandingEngine:
     global _semantic_engine
     if _semantic_engine is None:
         # Default to Gemini if API key is present, otherwise Mock provider
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
         if api_key:
             provider = GeminiSemanticProvider(api_key=api_key)
         else:

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
+from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.models.dna import WorkflowDNA
 
 logger = logging.getLogger(__name__)
@@ -157,11 +158,14 @@ class GeminiSemanticProvider(SemanticModelProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-1.5-flash",
+        model_name: Optional[str] = None,
         timeout_seconds: float = 30.0,
     ) -> None:
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = os.getenv("GEMINI_MODEL", model_name)
+        if api_key is not None:
+            self.api_key = api_key
+        else:
+            self.api_key = GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+        self.model_name = model_name or os.getenv("GEMINI_MODEL", GEMINI_MODEL)
         self.timeout_seconds = timeout_seconds
 
     def interpret_workflow_dna(self, dna: WorkflowDNA) -> Dict[str, Any]:

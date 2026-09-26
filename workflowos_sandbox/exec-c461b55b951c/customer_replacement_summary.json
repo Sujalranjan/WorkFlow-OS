@@ -1,0 +1,12 @@
+{
+  "execution_id": "exec-c461b55b951c",
+  "workflow_id": "wf-spec-local-11a8f6c5",
+  "step_id": "plan-step-local-70f516de",
+  "action": "save_file",
+  "parameters": {
+    "file_name": "customer_replacement_summary.json",
+    "customer_name": "Acme Global Industries"
+  },
+  "timestamp": "2026-09-26T09:15:37.308173+00:00",
+  "note": "WorkFlowOS Phase 8 Controlled Local Execution Artifact"
+}

@@ -1,0 +1,13 @@
+{
+  "execution_id": "exec-b162d52f2c3d",
+  "workflow_id": "wf-verif-demo-34a00708",
+  "step_id": "pstep-verif-3c4ca045",
+  "action": "save_file",
+  "parameters": {
+    "file_name": "customer_replacement_summary.json",
+    "customer": "Rahul Sharma",
+    "status": "replacement_requested"
+  },
+  "timestamp": "2026-09-26T09:42:55.963197+00:00",
+  "note": "WorkFlowOS Phase 8 Controlled Local Execution Artifact"
+}

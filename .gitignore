@@ -58,3 +58,9 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Google OAuth Credentials & Tokens (Phase 12 / 12.1)
+credentials.json
+token.json
+*credentials*.json
+*token*.json

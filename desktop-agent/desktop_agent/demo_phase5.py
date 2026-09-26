@@ -13,8 +13,17 @@ Demonstrates:
 
 import json
 import os
+from pathlib import Path
 import sys
 import urllib.request
+
+# Ensure repo root and backend are on sys.path for direct execution
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+for _dir in [str(_REPO_ROOT), str(_REPO_ROOT / "backend"), str(_REPO_ROOT / "desktop-agent")]:
+    if _dir not in sys.path:
+        sys.path.insert(0, _dir)
+
+from app.config import GEMINI_API_KEY
 from tests.fixtures.discovery_fixtures import generate_deterministic_dataset
 
 # Ensure terminal stdout safely prints UTF-8 on Windows
@@ -69,7 +78,7 @@ def run_phase5_demo() -> None:
 
     # 3. Trigger Semantic Interpretation
     print(f"\n3. Requesting Semantic Interpretation via POST /api/workflows/{dna_id}/interpret...")
-    provider_override = "gemini" if os.getenv("GEMINI_API_KEY") else "mock"
+    provider_override = "gemini" if (GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")) else "mock"
     print(f"   Using Provider: {provider_override.upper()} ({'Live Gemini API' if provider_override == 'gemini' else 'Deterministic Mock Provider'})")
 
     interpret_url = f"{backend_url}/api/workflows/{dna_id}/interpret?provider_type={provider_override}&similarity_threshold=0.65"

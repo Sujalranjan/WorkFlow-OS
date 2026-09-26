@@ -1,0 +1,11 @@
+{
+  "execution_id": "exec-1293c8f7df01",
+  "workflow_id": "wf-api-verif-1790424009.659241",
+  "step_id": "pstep-1",
+  "action": "save_file",
+  "parameters": {
+    "file_name": "api_verif_output.json"
+  },
+  "timestamp": "2026-09-26T12:00:09.702847+00:00",
+  "note": "WorkFlowOS Phase 8 Controlled Local Execution Artifact"
+}
