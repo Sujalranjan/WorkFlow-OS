@@ -53,6 +53,8 @@ from app.models.dna import DNAEvidence, WorkflowBoundaries
 from app.models.execution_plan import (
     ExecutionPlan,
     ExecutionStrategy,
+    ExpectedStateChange,
+    ParameterResolutionStatus,
     PlannedStep,
     ResolvedParameter,
     StepExecutionStrategy,
@@ -82,6 +84,16 @@ def print_section(title: str) -> None:
 
 
 def build_approved_spec(workflow_id: str, query: str):
+    step_risk = StepRisk(
+        step_id="can-live-01",
+        application="Gmail",
+        action="search_email",
+        risk_level=RiskLevel.LOW,
+        risk_category=RiskCategory.READ_ONLY,
+        reason="Read-only query without mutation",
+        requires_confirmation=False,
+    )
+
     spec = CanonicalWorkflowSpec(
         workflow_id=workflow_id,
         source_dna_id=f"dna-{workflow_id}",
@@ -117,7 +129,7 @@ def build_approved_spec(workflow_id: str, query: str):
             overall_risk_level=RiskLevel.LOW,
             primary_risk_category=RiskCategory.READ_ONLY,
             requires_human_confirmation=False,
-            step_risks=[],
+            step_risks=[step_risk],
             summary="Low risk read-only Gmail query without external modifications",
             sensitive_factors_detected=[],
         ),
@@ -144,31 +156,42 @@ def build_approved_spec(workflow_id: str, query: str):
             reason="External email query via official Gmail API",
             target_technology="Google Gmail API (REST)",
         ),
-        risk=StepRisk(
-            step_id="can-live-01",
-            risk_level=RiskLevel.LOW,
-            risk_category=RiskCategory.READ_ONLY,
-            risk_factors=[],
-            explanation="Read-only Gmail query",
+        risk=step_risk,
+        expected_result="Normalized email metadata summaries returned",
+        external_change=False,
+        requires_confirmation=False,
+        evidence_reference="evidence-gmail-search",
+        state_change=ExpectedStateChange(
+            target_system="Gmail",
+            entity_or_property="email_metadata",
+            before_state="Unqueried",
+            expected_after_state="Metadata retrieved",
+            actual_state="UNTOUCHED",
         ),
     )
 
     plan = ExecutionPlan(
         execution_plan_id=f"plan-live-{uuid.uuid4().hex[:6]}",
-        workflow_id=workflow_id,
-        planned_steps=[step],
+        source_workflow_id=workflow_id,
+        workflow_version="1.0.0",
+        source_approval_state="approved",
         resolved_parameters=[
             ResolvedParameter(
-                name="query",
+                semantic_name="query",
+                source_parameter="query",
+                source_field="parameters.query",
+                inferred_type="string",
+                is_required=True,
                 runtime_value=query,
-                source="user_input",
-                is_resolved=True,
+                resolution_status=ParameterResolutionStatus.RESOLVED,
             )
         ],
-        unresolved_parameters=[],
-        overall_risk=RiskLevel.LOW,
-        requires_approval=False,
-        is_approved=True,
+        planned_steps=[step],
+        preconditions=[],
+        boundaries=spec.boundaries,
+        risk_assessment=spec.risk_assessment,
+        expected_effects=[],
+        dry_run_status="SIMULATED",
     )
     ExecutionPlanRepository().save(plan)
     return spec, plan
@@ -255,13 +278,15 @@ def run_live_verification(query: str, max_results: int) -> None:
     print(f"Verification Run ID:       {verif_res.verification_run_id}")
     print(f"Verification Status:       {verif_res.overall_status.value}")
     check_evidence = verif_res.checks[0].evidence or {}
-    print(f"Verified Evidence:         Query='{check_evidence.get('query')}', ResultCount={check_evidence.get('result_count')}")
+    print(f"Verified Evidence:         Query='{check_evidence.get('query')}', TotalFound={check_evidence.get('total_found')}")
+    print(f"Verification Details:      {verif_res.checks[0].reason}")
 
     print_section("Step 4: Audit Record Inspection")
-    print(f"Audit Record ID:           {audit.execution_id}")
-    print(f"Audit Status:              {audit.status.value}")
-    print(f"Audit Verification:        {audit.verification_status}")
-    audit_json = audit.model_dump_json()
+    updated_audit = ExecutionRepository().get_by_id(audit.execution_id) or audit
+    print(f"Audit Record ID:           {updated_audit.execution_id}")
+    print(f"Audit Status:              {updated_audit.status.value}")
+    print(f"Audit Verification Status: {updated_audit.verification_status}")
+    audit_json = updated_audit.model_dump_json()
     assert "client_secret" not in audit_json and "access_token" not in audit_json and "refresh_token" not in audit_json
     print("✓ Confirmed: Zero credentials, tokens, or auth headers in audit record.")
 
