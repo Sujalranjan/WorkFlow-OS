@@ -30,11 +30,26 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend
 - Discovery API: `http://127.0.0.1:8000/api/discovery/candidates`
 - Workflow DNA API: `http://127.0.0.1:8000/api/workflows/dna`
 - Workflow DNA Item API: `http://127.0.0.1:8000/api/workflows/dna/{dna_id}`
+- Semantic Interpretation API: `POST http://127.0.0.1:8000/api/workflows/{dna_id}/interpret`
+- Semantic Workflow Retrieval: `GET http://127.0.0.1:8000/api/workflows/semantic/{semantic_workflow_id}`
 - Interactive Swagger Docs: `http://127.0.0.1:8000/docs`
 
 ---
 
-## 2. Desktop Agent (Live Windows Activity Observation)
+## 2. Gemini LLM Configuration (.env)
+
+Phase 5 introduces semantic understanding using Google Gemini:
+- `GEMINI_API_KEY`: Your Google AI Studio API key. If unset, the system gracefully operates in offline fallback / mock mode without crashing.
+- `GEMINI_MODEL`: Model identifier (default: `gemini-1.5-flash`).
+
+```bash
+# Windows PowerShell
+$env:GEMINI_API_KEY="your-gemini-api-key-here"
+```
+
+---
+
+## 3. Desktop Agent (Live Windows Activity Observation)
 
 ### Configuration (.env)
 You can customize the desktop agent behavior via environment variables:
@@ -54,25 +69,29 @@ python desktop-agent/desktop_agent/agent.py
 
 ---
 
-## 3. Running the Demos
+## 4. Running the Demos
+
+### Phase 5: Semantic Understanding & Intent Translation Demo
+With the backend running, execute the Phase 5 semantic interpretation demo:
+```bash
+# Windows PowerShell
+$env:PYTHONPATH=".;backend;desktop-agent"
+python desktop-agent/desktop_agent/demo_phase5.py
+```
+This script:
+1. Ingests a multi-session dataset (3 instances of Customer Replacement Request workflows, developer workflow, and noise).
+2. Extracts deterministic Workflow DNA.
+3. Invokes `POST /api/workflows/{dna_id}/interpret`.
+4. Displays the side-by-side comparison:
+   - **Observed Deterministic Ground Truth (WorkflowDNA)**
+   - **AI Semantic Interpretation (Validated SemanticWorkflow)** with entity variable mappings (`customer_name` &larr; `window_title_variable_1`) and intent steps.
 
 ### Phase 4: Workflow DNA Extraction Demo
-With the backend running, execute the deterministic Workflow DNA extraction demo:
 ```bash
 # Windows PowerShell
 $env:PYTHONPATH=".;backend;desktop-agent"
 python desktop-agent/desktop_agent/demo_phase4.py
 ```
-This script:
-1. Ingests a multi-session dataset (3 instances of Customer Replacement Request workflows with variable titles, variable invoice filenames, an optional Excel step, a developer workflow, and isolated noise).
-2. Hits `GET /api/workflows/dna`.
-3. Displays:
-   - Core / Invariant Steps (100% occurrence)
-   - Variable Parameters & Templates (e.g. `invoice_{variable}.pdf`)
-   - Optional Steps (e.g. `Microsoft Excel`, 1/3 sessions)
-   - Ordering Constraints (pairwise precedence)
-   - Preconditions & Structural Boundaries
-   - Explainable Evidence
 
 ### Phase 3: Workflow Discovery Demo
 ```bash
@@ -83,7 +102,7 @@ python desktop-agent/desktop_agent/demo_phase3.py
 
 ---
 
-## 4. Frontend Dashboard & Workflow DNA View
+## 5. Frontend Dashboard & Semantic Understanding View
 
 ### Install & Run Frontend
 ```bash
@@ -93,15 +112,14 @@ npm run dev
 ```
 Open `http://localhost:5173`.
 
-- **Workflow DNA Analysis**: Card-based view showing:
-  - Invariant steps with checkmarks (✓) and occurrence ratios (3/3)
-  - Variable parameters with template patterns (`invoice_{variable}.pdf`) and observed tag clouds
-  - Optional steps with bullet indicators (?)
-  - Step-by-step ordering precedence flow (`Gmail` &rarr; `File System` &rarr; `CRM` &rarr; `Slack`)
-  - Structural preconditions and execution boundaries
-  - Plain-language evidence cards
+- **Semantic Workflow Interpretation View**:
+  - Comparative layout showing **Observed Ground Truth** (left) vs **AI Interpretation** (right).
+  - Variable entity mapping cards with confidence indicators (`model_interpretation_confidence: 92% (LLM estimate)`).
+  - Step-by-step intent breakdown with citations to DNA evidence.
+  - Interactive "Run AI Semantic Interpretation" button with provider toggle (Auto, Mock LLM, Live Gemini).
+- **Workflow DNA Analysis**: Structural invariants, variable parameters, optionals, and ordering flow.
 - **Discovered Workflow Candidates**: Sequence flow graphs and candidate signatures.
-- **Ingested Activity Events**: Real-time event stream showing recent activity.
+- **Ingested Activity Events**: Real-time event stream.
 
 ### Verify Production Build
 ```bash
@@ -110,9 +128,9 @@ npm run build
 
 ---
 
-## 5. Running Automated Tests
+## 6. Running Automated Tests
 
-Run the complete test suite:
+Run the complete deterministic test suite (all 35 tests run offline without requiring external API keys):
 
 ```bash
 # Windows PowerShell
@@ -120,4 +138,11 @@ $env:PYTHONPATH=".;backend;desktop-agent"
 pytest tests/ -v
 ```
 
-All 26 tests across Phase 0, 1, 2, 3, and 4 will run deterministically.
+### Optional Live Gemini Integration Test
+If you have configured `GEMINI_API_KEY`:
+```bash
+# Windows PowerShell
+$env:GEMINI_API_KEY="your-gemini-api-key"
+$env:PYTHONPATH=".;backend;desktop-agent"
+pytest -k test_live_gemini_provider_integration -v
+```

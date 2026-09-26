@@ -1,10 +1,10 @@
-# WorkFlowOS Architecture: Workflow DNA & Discovery
+# WorkFlowOS Architecture: Workflow Discovery, DNA & Semantic Understanding
 
 ## Overview
 
 WorkFlowOS is an AI-powered desktop workflow automation system designed to observe user digital activity, detect repetition, understand user intent, generate structured workflows, obtain user approval, and execute workflows using the most reliable available mechanisms.
 
-This document describes the architectural flow from raw events to **Workflow Discovery (Phase 3)** and **Workflow DNA (Phase 4)**.
+This document describes the architectural flow from raw events to **Workflow Discovery (Phase 3)**, **Workflow DNA (Phase 4)**, and **Semantic Understanding & Intent Translation (Phase 5)**.
 
 ---
 
@@ -13,7 +13,8 @@ This document describes the architectural flow from raw events to **Workflow Dis
 ```
 Phase 3 answers:   "What repeats?"
 Phase 4 answers:   "What stays the same and what changes?"
-Phase 5+ answers:  "What does it mean?"
+Phase 5 answers:   "What does it mean?"
+Phase 6+ answers:  "How do we safely execute it?"
 ```
 
 ---
@@ -21,52 +22,41 @@ Phase 5+ answers:  "What does it mean?"
 ## End-to-End Workflow Pipeline
 
 ```
-Stored ActivityEvents (SQLite activity_events table)
+Raw Activity Events (Windows Window Focus & File Watchers)
            ↓
-   WorkflowSegmenter
-   ├── Chronological event sorting
-   ├── Inactivity boundary enforcement (default threshold: 120s)
-   └── Maximum session duration enforcement
+   WorkflowSegmenter (Temporal & Inactivity Boundaries)
            ↓
-   TaskSession Instances
-   ├── session_id (deterministic hash)
-   ├── start_time & end_time
-   ├── applications_involved & event_count
-   └── segmentation_reason (explainable trigger)
+   TaskSession Instances (Deterministic Session Hashing)
            ↓
-   WorkflowDiscoveryEngine (Phase 3: "What repeats?")
-   ├── Signature Normalization (app:event_type token mapping)
-   ├── Noise Suppression (filters incidental background interruptions)
-   ├── Deterministic Sequence Clustering (LCS ratio >= 0.65)
-   └── Frequency Thresholding (min_occurrences >= 2)
+   WorkflowDiscoveryEngine (Noise-tolerant Sequence Clustering)
            ↓
-   DiscoveryCandidate Instances
-   ├── candidate_id (deterministic hash) & normalized_signature
-   ├── occurrences count & average_similarity_score
-   ├── representative_sequence (ordered NormalizedSteps)
-   ├── supporting_session_ids (provenance trail)
-   └── explainable evidence text
+   DiscoveryCandidate Instances (Deterministic Canonical Signatures)
            ↓
-   WorkflowDNAExtractor (Phase 4: "What stays the same and what changes?")
+   WorkflowDNAExtractor (Empirical Invariants, Variables & Evidence)
            ↓
-┌────────────────────────────────────────────────────────┐
-│ WORKFLOW DNA                                           │
-├────────────────────────────────────────────────────────┤
-│ • Invariant Steps (100% session occurrence)            │
-│ • Variable Parameters (observed values, templates)     │
-│ • Optional Steps (sub-100% session occurrence)         │
-│ • Ordering Constraints (pairwise before/after rules)   │
-│ • Preconditions (structural prerequisite flow)         │
-│ • Boundaries (first/last step, min/avg/max duration)   │
-│ • Evidence (mathematical provenance across all facets) │
-└────────────────────────────────────────────────────────┘
+   Deterministic WorkflowDNA Object
+           ↓
+   SemanticUnderstandingEngine
+           ↓
+   Prompt Construction (Structured DNA Context ONLY)
+           ↓
+   LLM Provider Layer (GeminiSemanticProvider / MockSemanticProvider)
+           ↓
+   Structured JSON Output
+           ↓
+   Deterministic Semantic Validation Layer (Ground Truth Enforcement)
+           ↓
+   Canonical Validated SemanticWorkflow Model
            ↓
    FastAPI Endpoints:
    • GET /api/discovery/candidates
    • GET /api/workflows/dna
    • GET /api/workflows/dna/{dna_id}
+   • POST /api/workflows/{dna_id}/interpret
+   • GET /api/workflows/semantic/{semantic_workflow_id}
            ↓
    Frontend React Dashboard:
+   • Comparative View: Observed Ground Truth vs AI Interpretation
    • Workflow DNA Analysis View
    • Discovered Workflow Candidates View
    • Live Activity Event Stream
@@ -74,55 +64,66 @@ Stored ActivityEvents (SQLite activity_events table)
 
 ---
 
-## Workflow DNA Components
+## Why the LLM Receives WorkflowDNA Rather Than Raw Events
 
-### 1. Invariant Steps
-- Steps that occur across 100% of supporting sessions.
-- Supported by measurable evidence: occurrence count, total sessions, occurrence ratio (1.0).
-- Example: `Gmail` window focus, `File System` download, `CRM` window focus, `Slack` notification.
+A central architectural differentiator of WorkFlowOS is that **raw desktop events are never streamed directly into an LLM**.
 
-### 2. Variable Parameters
-- Identified by analyzing event metadata across supporting sessions where surrounding event structure remains stable.
-- Sources: `window_title`, `file_name`, `url`.
-- Candidate names remain structural (`window_title_variable_1`, `file_name_variable_1`) rather than inventing semantic names (e.g. `customer_name`), which will be performed in Phase 5 AI intent understanding.
-- Pattern templates are derived deterministically:
-  - `invoice_101.pdf`, `invoice_102.pdf`, `invoice_103.pdf` $\rightarrow$ `invoice_{variable}.pdf`
-  - `Rahul - Replacement Request`, `Ananya - Replacement Request` $\rightarrow$ `{variable} - Replacement Request`
+1. **Noise Elimination**: Raw desktop streams contain hundreds of irrelevant focus events, accidental clicks, and alt-tabs. Sending raw streams to an LLM leads to hallucinated patterns and prompt bloat.
+2. **Deterministic Ground Truth**: Mathematical occurrence ratios, temporal boundaries, and precedence matrices are empirical facts that software computes deterministically. The LLM is an interpreter of facts, not the authority over what occurred.
+3. **Strict Privacy**: By boiling thousands of low-level OS events down to an abstract WorkflowDNA signature, sensitive transient desktop data is never transmitted across the network.
+4. **Token Efficiency & Speed**: A structured WorkflowDNA object is concise (~500 tokens), enabling sub-second, highly reproducible structured responses.
 
-### 3. Optional Steps
-- Steps that appear in a subset ($< 100\%$) of supporting sessions while belonging to the discovered workflow cluster.
-- Example: `Microsoft Excel` logging performed in 1 of 3 executions.
-- Records occurrence count, total sessions, occurrence ratio, and supporting session IDs.
+---
 
-### 4. Ordering Constraints
-- Deterministic pairwise precedence matrix between invariant steps.
-- If Step A precedes Step B in 100% of sessions, an explicit ordering constraint is generated:
-  - `'gmail:window_focused' consistently occurs before 'file system:file_downloaded'`
-  - `'file system:file_downloaded' consistently occurs before 'crm:window_focused'`
-  - `'crm:window_focused' consistently occurs before 'slack:window_focused'`
+## Semantic Understanding Architecture (Phase 5)
 
-### 5. Preconditions & Boundaries
-- Structural entry preconditions: workflow begins with the first invariant step.
-- Sequential prerequisite assertions: each step must be preceded by its predecessor.
-- Boundaries capture structural start/end steps and exact minimum, maximum, and average durations from supporting sessions.
+### 1. Provider Abstraction
+The semantic layer interacts with LLMs exclusively through the `SemanticModelProvider` abstract base class:
+- `GeminiSemanticProvider`: Communicates with Google's Gemini models (`gemini-1.5-flash`) enforcing strict JSON output (`response_mime_type: "application/json"`).
+- `MockSemanticProvider`: Deterministic, offline provider used for automated testing, fallback evaluation, and offline local development without API keys.
 
-### 6. Explainable Evidence
-- Every DNA dimension produces plain-language, mathematically backed evidence describing the supporting session count, occurrence ratios, observed values, and consistency metrics.
+### 2. Prompt Contract & Strict JSON Schema
+The prompt explicitly instructs the LLM:
+- **Role**: You are a desktop workflow semantics interpreter.
+- **Rules**:
+  1. Rely exclusively on the supplied `WorkflowDNA`.
+  2. Map semantic steps 1-to-1 to observed invariant step keys (`source_dna_step_key`).
+  3. Map semantic variables to observed structural parameters (`source_parameter`).
+  4. Preserve ordering constraints.
+  5. Never produce executable code, browser automation, or click coordinates.
+  6. Label confidence explicitly as `model_interpretation_confidence` (an LLM estimate).
+
+### 3. Deterministic Semantic Validation Layer
+Before any LLM response is accepted by the application, the `SemanticWorkflowValidator` verifies:
+- **Step Validity**: Every `source_dna_step_key` must exist in the source DNA's invariant or optional steps.
+- **Variable Validity**: Every `source_parameter` must match an existing parameter in `dna.variable_parameters`.
+- **Application Validity**: The step's application name must match the application in the corresponding DNA step.
+- **Ordering Validity**: The sequence of semantic steps must not contradict any pairwise ordering constraints established in DNA.
+- **No Invented Actions**: Reject any output containing hallucinated steps or applications.
+
+If validation fails, the response is rejected and diagnostic errors are returned. The system never silently repairs hallucinated output.
+
+### 4. Safe Fallback Behavior
+If the Gemini API key is missing, network is down, or an error occurs:
+- The backend does **not** crash.
+- Returns an `InterpretationResponse` with `status: "fallback"`.
+- The deterministic `WorkflowDNA` is preserved and returned completely intact.
+- The UI clearly indicates that semantic interpretation is currently unavailable.
 
 ---
 
 ## Security & Privacy Boundary
 
-Phase 4 preserves all previous security principles:
-- **Zero AI / LLM Calls**: 100% deterministic local computation; no external APIs, cloud models, or third-party inference endpoints are touched.
-- **Local Metadata Only**: Only reads captured event metadata (window titles, filenames, URLs); never inspects file contents or desktop pixels.
-- **Explainability**: Full transparency into why any parameter or step was classified as invariant, variable, or optional.
+- **What is sent to LLM**: ONLY abstract metadata enclosed in `WorkflowDNA` (application names, high-level event types, observed window title prefixes/suffixes, and duration metrics).
+- **What is NEVER sent to LLM**: Zero screenshots, zero desktop pixels, zero keystrokes, zero clipboard data, zero passwords, zero document/file bodies, and zero browser HTML.
 
 ---
 
-## What is NOT Implemented Yet
-- Semantic AI intent translation (translating `window_title_variable_1` into `customer_name`) — *Phase 5*.
-- Executable workflow generation (Playwright, API script generation).
-- Dry-run execution & user approval modal.
-- Active workflow automation & orchestration.
+## What is NOT Implemented Yet (Phase 6+)
+
+- **NO Workflow Code Generation**: The LLM outputs structured semantic models (`SemanticWorkflow`), not Python/JavaScript code.
+- **NO Browser / Desktop Automation**: No Playwright, Selenium, or mouse/keyboard injection.
+- **NO Third-Party API Execution**: No active mutation of Gmail, CRM, or Slack.
+- **NO User Approval / Automation Trigger**: UI is strictly an analytical and intent inspection view.
+
 
