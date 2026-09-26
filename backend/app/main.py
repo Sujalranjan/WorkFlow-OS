@@ -6,6 +6,7 @@ from app.api.discovery import router as discovery_router
 from app.api.dna import router as dna_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.semantic import router as semantic_router
 from app.config import PROJECT_NAME, VERSION
 
 
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(discovery_router)
     app.include_router(dna_router)
+    app.include_router(semantic_router)
 
     return app
 

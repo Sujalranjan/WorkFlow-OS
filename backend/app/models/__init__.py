@@ -11,6 +11,13 @@ from app.models.dna import (
     WorkflowDNA,
 )
 from app.models.event import ActivityEvent, ActivityEventType
+from app.models.semantic import (
+    InterpretationResponse,
+    SemanticOptionalStep,
+    SemanticStep,
+    SemanticVariable,
+    SemanticWorkflow,
+)
 
 __all__ = [
     "ActivityEvent",
@@ -25,4 +32,9 @@ __all__ = [
     "OrderingConstraint",
     "WorkflowBoundaries",
     "DNAEvidence",
+    "SemanticStep",
+    "SemanticVariable",
+    "SemanticOptionalStep",
+    "SemanticWorkflow",
+    "InterpretationResponse",
 ]

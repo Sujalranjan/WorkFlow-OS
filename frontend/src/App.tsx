@@ -2,9 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { ActivityEvent } from './types/event';
 import { DiscoveryCandidate } from './types/discovery';
 import { WorkflowDNA } from './types/dna';
+import { InterpretationResponse } from './types/semantic';
 import { EventList } from './components/EventList';
 import { DiscoveryView } from './components/DiscoveryView';
 import { DNAView } from './components/DNAView';
+import { SemanticView } from './components/SemanticView';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -12,9 +14,11 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
   const [dnaItems, setDnaItems] = useState<WorkflowDNA[]>([]);
+  const [interpretations, setInterpretations] = useState<Record<string, InterpretationResponse>>({});
   const [isEventsLoading, setIsEventsLoading] = useState<boolean>(false);
   const [isDiscoveryLoading, setIsDiscoveryLoading] = useState<boolean>(false);
   const [isDnaLoading, setIsDnaLoading] = useState<boolean>(false);
+  const [interpretingDnaId, setInterpretingDnaId] = useState<string | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [dnaError, setDnaError] = useState<string | null>(null);
@@ -82,6 +86,47 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  const handleInterpret = useCallback(async (dnaId: string, providerType?: string) => {
+    setInterpretingDnaId(dnaId);
+    try {
+      const params = new URLSearchParams({
+        similarity_threshold: '0.65',
+        min_occurrences: '2',
+        inactivity_timeout: '120.0',
+        force_refresh: 'true',
+      });
+      if (providerType) {
+        params.append('provider_type', providerType);
+      }
+      const response = await fetch(`${API_BASE}/api/workflows/${dnaId}/interpret?${params.toString()}`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`Interpretation request failed: HTTP ${response.status}`);
+      }
+      const data: InterpretationResponse = await response.json();
+      setInterpretations((prev) => ({
+        ...prev,
+        [dnaId]: data,
+      }));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown interpretation error';
+      setInterpretations((prev) => ({
+        ...prev,
+        [dnaId]: {
+          status: 'error',
+          semantic_workflow: null,
+          source_dna: dnaItems.find((d) => d.dna_id === dnaId)!,
+          message: errMsg,
+          validation_passed: false,
+          validation_errors: [errMsg],
+        },
+      }));
+    } finally {
+      setInterpretingDnaId(null);
+    }
+  }, [dnaItems]);
+
   const refreshAll = useCallback(() => {
     fetchEvents();
     fetchDiscoveryCandidates();
@@ -99,7 +144,7 @@ export const App: React.FC = () => {
           <div className="brand-icon">W</div>
           <span className="brand-title">WorkFlowOS</span>
         </div>
-        <div className="nav-phase-badge">Phase 4: Workflow DNA</div>
+        <div className="nav-phase-badge">Phase 5: Semantic Understanding</div>
       </header>
 
       <main className="main-content">
@@ -140,15 +185,24 @@ export const App: React.FC = () => {
 
           <div className="status-card">
             <div className="card-header">
-              <h2 className="card-title">Explainability & Evidence</h2>
-              <div className="indicator" title="Explainable Baseline Active"></div>
+              <h2 className="card-title">Semantic Understanding</h2>
+              <div className="indicator" title="Semantic Intent Active"></div>
             </div>
             <p className="card-text">
-              Full transparency with mathematical occurrence ratios, observed values, and structural bounds.
+              Evidence-grounded LLM translation of structural DNA into validated semantic workflow intent.
             </p>
-            <div className="card-meta">Differentiator: Explainable Autonomy</div>
+            <div className="card-meta">Phase 5: AI Intent Translation</div>
           </div>
         </section>
+
+        {/* Phase 5 Semantic Understanding & Intent Translation View */}
+        <SemanticView
+          dnaItems={dnaItems}
+          interpretations={interpretations}
+          isLoading={interpretingDnaId !== null}
+          interpretingDnaId={interpretingDnaId}
+          onInterpret={handleInterpret}
+        />
 
         {/* Phase 4 Workflow DNA View */}
         <DNAView
@@ -176,7 +230,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="footer">
-        WorkFlowOS &mdash; Phase 4 Deterministic Workflow DNA
+        WorkFlowOS &mdash; Phase 5 AI Semantic Understanding & Intent Translation
       </footer>
     </div>
   );
