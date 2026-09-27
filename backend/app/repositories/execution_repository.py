@@ -98,6 +98,7 @@ class ExecutionRepository:
                     ON CONFLICT(execution_id) DO UPDATE SET
                         status = excluded.status,
                         end_time = excluded.end_time,
+                        idempotency_key = excluded.idempotency_key,
                         record_json = excluded.record_json
                     """,
                     (

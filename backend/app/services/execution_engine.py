@@ -220,8 +220,27 @@ class ExecutionEngine:
                     f"'{sel_res.selected_strategy.value}' is not implemented."
                 )
 
+            # Resolve template placeholders and populate unset parameters using context
+            effective_step_params = dict(step.resolved_parameters or {})
+            for k, v in list(effective_step_params.items()):
+                if (v is None or v == "") and k in context.resolved_parameters and context.resolved_parameters[k] is not None:
+                    effective_step_params[k] = context.resolved_parameters[k]
+                    v = effective_step_params[k]
+                if isinstance(v, str):
+                    val_str = v
+                    for ctx_k, ctx_v in context.resolved_parameters.items():
+                        if ctx_v is not None and not isinstance(ctx_v, (dict, list)):
+                            val_str = val_str.replace(f"{{{{{ctx_k}}}}}", str(ctx_v))
+                            val_str = val_str.replace(f"{{{ctx_k}}}", str(ctx_v))
+                    effective_step_params[k] = val_str
+            for ctx_k, ctx_v in context.resolved_parameters.items():
+                if ctx_k not in effective_step_params or effective_step_params[ctx_k] is None:
+                    effective_step_params[ctx_k] = ctx_v
+            step.resolved_parameters = effective_step_params
+
             # Validate step against executor guardrails
-            is_valid, validation_errors = executor.validate(step, context)
+            step_context = context.model_copy(update={"resolved_parameters": effective_step_params})
+            is_valid, validation_errors = executor.validate(step, step_context)
             if not is_valid:
                 step_res = ExecutionStepResult(
                     planned_step_id=step.plan_step_id,
@@ -248,7 +267,7 @@ class ExecutionEngine:
                 break
 
             # Execute step with selected executor
-            step_result = executor.execute(step, context)
+            step_result = executor.execute(step, step_context)
             step_result.selected_strategy = sel_res.selected_strategy.value if sel_res.selected_strategy else None
             step_result.selection_reason = sel_res.selection_reason
             step_result.candidate_strategies = [c.strategy.value for c in sel_res.candidates_considered]
@@ -259,6 +278,65 @@ class ExecutionEngine:
 
             if step_result.affected_resources:
                 all_affected.extend(step_result.affected_resources)
+
+            # Phase 16: Propagate successful step outputs to context.resolved_parameters for downstream steps
+            if step_result.status == ExecutionStepStatus.SUCCESS and step_result.output:
+                act_norm = step.action.lower().strip().replace(" ", "_")
+                # 1. Namespaced outputs
+                for out_k, out_v in step_result.output.items():
+                    if out_v is not None:
+                        context.resolved_parameters[f"{step.plan_step_id}.{out_k}"] = out_v
+                        context.resolved_parameters[f"{act_norm}.{out_k}"] = out_v
+
+                # 2. Domain-specific parameter bindings
+                if act_norm == "search_email":
+                    messages = step_result.output.get("messages") or []
+                    if messages and isinstance(messages, list) and isinstance(messages[0], dict):
+                        first_msg = messages[0]
+                        msg_id = first_msg.get("message_id") or first_msg.get("id") or first_msg.get("msg_id")
+                        if msg_id:
+                            context.resolved_parameters["message_id"] = msg_id
+                            context.resolved_parameters["msg_id"] = msg_id
+                        if first_msg.get("subject"):
+                            context.resolved_parameters["email_subject"] = first_msg.get("subject")
+                        sender = first_msg.get("sender") or first_msg.get("sender_email") or first_msg.get("from")
+                        if sender:
+                            context.resolved_parameters["email"] = sender
+                            context.resolved_parameters["customer_email"] = sender
+                        attachments = first_msg.get("attachments") or []
+                        if attachments and isinstance(attachments, list) and isinstance(attachments[0], dict):
+                            context.resolved_parameters["attachment_id"] = attachments[0].get("id") or attachments[0].get("attachment_id")
+                            context.resolved_parameters["filename"] = attachments[0].get("filename")
+
+                elif act_norm in ("download_attachment", "download_email_attachment"):
+                    saved_p = step_result.output.get("saved_path") or step_result.output.get("destination_path")
+                    if saved_p:
+                        context.resolved_parameters["downloaded_file"] = saved_p
+                        context.resolved_parameters["attachment_path"] = saved_p
+                    if step_result.output.get("filename"):
+                        context.resolved_parameters["filename"] = step_result.output.get("filename")
+                    if step_result.output.get("sha256"):
+                        context.resolved_parameters["attachment_sha256"] = step_result.output.get("sha256")
+
+                elif act_norm in ("find_customer", "get_customer"):
+                    cust = step_result.output.get("customer")
+                    if cust and isinstance(cust, dict):
+                        context.resolved_parameters["customer_id"] = cust.get("customer_id")
+                        context.resolved_parameters["customer_name"] = cust.get("name")
+                        context.resolved_parameters["customer_company"] = cust.get("company")
+                        context.resolved_parameters["customer_status"] = cust.get("status")
+                        if cust.get("email"):
+                            context.resolved_parameters["customer_email"] = cust.get("email")
+
+                elif act_norm in ("update_customer_record", "update_customer"):
+                    cust = step_result.output.get("customer")
+                    if cust and isinstance(cust, dict):
+                        context.resolved_parameters["customer_status"] = cust.get("status")
+                    context.resolved_parameters["crm_updated"] = True
+
+                elif act_norm in ("send_notification", "notify"):
+                    if step_result.output.get("ts"):
+                        context.resolved_parameters["slack_ts"] = step_result.output.get("ts")
 
             # Fail-closed check
             if step_result.status == ExecutionStepStatus.FAILED:

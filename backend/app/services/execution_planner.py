@@ -44,16 +44,18 @@ class ExecutionPlanner:
 
         # 1. External enterprise applications (CRM, ERP, Database)
         if any(crm in app_lower for crm in ["crm", "salesforce", "hubspot", "database"]):
-            if risk_cat == RiskCategory.EXTERNAL_CHANGE or any(w in action_lower for w in ["update", "modify", "save"]):
-                return StepExecutionStrategy(
-                    strategy=ExecutionStrategy.APPLICATION_INTEGRATION,
-                    reason="External CRM record mutation requires a controlled application integration boundary with transactional rollback safeguards.",
-                    target_technology="Enterprise CRM Connector / REST SDK",
-                )
             return StepExecutionStrategy(
-                strategy=ExecutionStrategy.ACCESSIBILITY_SEMANTIC_UI,
-                reason="Read-only CRM inspection utilizes OS semantic accessibility tree to locate window controls.",
-                target_technology="Windows UI Automation (UIA)",
+                strategy=ExecutionStrategy.API,
+                reason="Customer lookup and record mutation executes through the WorkFlowOS Demo CRM REST API.",
+                target_technology="CRM REST API / HTTP Client",
+            )
+
+        # 2. Email Services (Gmail, Google Mail)
+        if any(gm in app_lower for gm in ["gmail", "google mail", "email"]):
+            return StepExecutionStrategy(
+                strategy=ExecutionStrategy.API,
+                reason="Read-only email operations execute through the Google Gmail REST API.",
+                target_technology="Google Gmail API (read-only)",
             )
 
         # 2. Team Communication & Alerts (Slack, Teams, Webhook)
@@ -268,6 +270,11 @@ class ExecutionPlanner:
 
             # Phase 10: Multi-strategy selection evaluation
             sel_res = self.strategy_selector.select_strategy(planned_step, spec)
+            if sel_res.is_executable and sel_res.selected_strategy:
+                if sel_res.selected_strategy.value == "api_integration":
+                    planned_step.execution_strategy.strategy = ExecutionStrategy.API
+                elif sel_res.selected_strategy.value == "controlled_local":
+                    planned_step.execution_strategy.strategy = ExecutionStrategy.CONTROLLED_LOCAL
             planned_step.execution_strategy.canonical_strategy = sel_res.selected_strategy.value if sel_res.selected_strategy else None
             planned_step.execution_strategy.selection_reason = sel_res.selection_reason
             planned_step.execution_strategy.available_strategies_considered = [c.strategy.value for c in sel_res.candidates_considered]

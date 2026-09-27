@@ -148,13 +148,14 @@ class CrmRepository:
     ) -> List[CrmCustomer]:
         """Searches customer records matching query, email, name, or company."""
         with self._get_connection() as conn:
-            if email and email.strip():
+            if email and email.strip() and not (query and query.strip()):
                 cursor = conn.execute(
                     "SELECT * FROM crm_customers WHERE LOWER(email) LIKE ? LIMIT ?",
                     (f"%{email.strip().lower()}%", limit),
                 )
             elif query and query.strip():
                 q_pattern = f"%{query.strip().lower()}%"
+                e_pattern = f"%{email.strip().lower()}%" if (email and email.strip()) else q_pattern
                 cursor = conn.execute(
                     """
                     SELECT * FROM crm_customers
@@ -163,9 +164,10 @@ class CrmRepository:
                        OR LOWER(company) LIKE ?
                        OR LOWER(customer_id) LIKE ?
                        OR LOWER(invoice_reference) LIKE ?
+                       OR LOWER(email) LIKE ?
                     LIMIT ?
                     """,
-                    (q_pattern, q_pattern, q_pattern, q_pattern, q_pattern, limit),
+                    (q_pattern, q_pattern, q_pattern, q_pattern, q_pattern, e_pattern, limit),
                 )
             else:
                 cursor = conn.execute(

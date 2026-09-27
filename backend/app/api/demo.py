@@ -598,3 +598,62 @@ def reset_demo_state(service: EventService = Depends(get_event_service)) -> Rese
         message="Demonstration state reset successfully. OAuth configuration and credentials remain untouched.",
     )
 
+
+class SeedE2EWorkflowResponse(BaseModel):
+    workflow_id: str
+    title: str
+    status: str
+    approval_state: str
+    steps_count: int
+    steps: List[str]
+    message: str
+
+
+@router.post(
+    "/seed-e2e-workflow",
+    response_model=SeedE2EWorkflowResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Seed the complete Phase 16 Full End-to-End Workflow into WorkFlowOS",
+)
+def seed_e2e_workflow(
+    auto_approve: bool = False,
+    reviewer: Optional[str] = None,
+) -> SeedE2EWorkflowResponse:
+    """Seeds the formal Phase 16 Canonical Workflow (Gmail → Attachment → CRM → Slack).
+
+    Creates a CanonicalWorkflowSpec in REQUIRES_REVIEW state (or approved if auto_approve=True).
+    Ensures Demo CRM test data is seeded for customer 'cust-001'.
+    """
+    from app.repositories.crm_repository import CrmRepository
+    from app.services.phase16_workflow import Phase16Orchestrator
+
+    # Ensure Demo CRM has customer record 'cust-001'
+    crm_repo = CrmRepository()
+    if not crm_repo.get_customer("cust-001"):
+        crm_repo.create_customer(
+            customer_id="cust-001",
+            name="Rahul Sharma",
+            email="rahul.sharma@example.com",
+            company="Acme Corp",
+            status="pending_replacement",
+            notes="Initial replacement request logged",
+        )
+
+    orchestrator = Phase16Orchestrator()
+    spec = orchestrator.prepare_workflow(
+        auto_approve=auto_approve,
+        reviewer=reviewer or "Lead Security Reviewer",
+    )
+
+    step_summaries = [f"{s.application}: {s.action}" for s in spec.steps]
+    return SeedE2EWorkflowResponse(
+        workflow_id=spec.workflow_id,
+        title=spec.title,
+        status=spec.status,
+        approval_state=spec.approval_state.state.value,
+        steps_count=len(spec.steps),
+        steps=step_summaries,
+        message=f"Seeded Phase 16 E2E canonical workflow '{spec.workflow_id}' with {len(spec.steps)} steps.",
+    )
+
+

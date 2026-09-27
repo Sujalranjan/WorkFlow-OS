@@ -58,7 +58,7 @@ class CrmApiExecutor(BaseExecutor):
             strategy_type=ExecutionStrategyType.API_INTEGRATION,
             supported_actions=["find_customer", "update_customer_record", "get_customer"],
             supported_targets=["CRM", "crm", "Demo CRM", "HubSpot", "Salesforce"],
-            supported_risk_levels=[RiskLevel.LOW.value, RiskLevel.MEDIUM.value],
+            supported_risk_levels=[RiskLevel.LOW.value, RiskLevel.MEDIUM.value, RiskLevel.HIGH.value],
             implemented=True,
             requires_external_access=True,
             supports_verification=True,
@@ -98,11 +98,12 @@ class CrmApiExecutor(BaseExecutor):
         if not any(t in app_norm for t in ["crm", "hubspot", "salesforce"]):
             errors.append(f"CrmApiExecutor only targets CRM systems. Given application: '{step.application}'")
 
-        resolved_params = context.resolved_parameters or {}
+        resolved_params = {**(context.resolved_parameters or {}), **(step.resolved_parameters or {})}
 
         if act_norm == "find_customer":
             query = (
-                resolved_params.get("query")
+                resolved_params.get("customer_query")
+                or resolved_params.get("query")
                 or resolved_params.get("search_query")
                 or resolved_params.get("email")
                 or resolved_params.get("customer_email")
@@ -118,7 +119,7 @@ class CrmApiExecutor(BaseExecutor):
                 or resolved_params.get("id")
                 or resolved_params.get("cust_id")
             )
-            if not cust_id or not str(cust_id).strip():
+            if (not cust_id or not str(cust_id).strip()) and not context.dry_run:
                 errors.append("Missing required 'customer_id' parameter for update_customer_record")
 
         return len(errors) == 0, errors
@@ -127,7 +128,7 @@ class CrmApiExecutor(BaseExecutor):
         """Executes a single CRM operation via the CrmApiClient."""
         start_time = datetime.now(timezone.utc).isoformat()
         act_norm = self._normalize_action(step.action)
-        resolved_params = context.resolved_parameters or {}
+        resolved_params = {**(context.resolved_parameters or {}), **(step.resolved_parameters or {})}
 
         # 1. Action Check
         if act_norm not in ("find_customer", "update_customer_record", "get_customer"):
@@ -210,9 +211,10 @@ class CrmApiExecutor(BaseExecutor):
         start_time: str,
     ) -> ExecutionStepResult:
         """Executes find_customer via the CRM API client."""
-        resolved_params = context.resolved_parameters or {}
+        resolved_params = {**(context.resolved_parameters or {}), **(step.resolved_parameters or {})}
         query = (
-            resolved_params.get("query")
+            resolved_params.get("customer_query")
+            or resolved_params.get("query")
             or resolved_params.get("search_query")
             or resolved_params.get("customer_name")
             or resolved_params.get("customer_id")
@@ -240,14 +242,35 @@ class CrmApiExecutor(BaseExecutor):
                 email=str(email).strip() if email else None,
             )
 
-            cust_dumps = [c.model_dump() for c in search_res.customers]
+            if hasattr(search_res, "customers"):
+                cust_dumps = [c.model_dump() if hasattr(c, "model_dump") else c for c in search_res.customers]
+                total_found = search_res.total_found
+                query_echo = getattr(search_res, "query", str(query))
+            elif isinstance(search_res, list):
+                cust_dumps = [c.model_dump() if hasattr(c, "model_dump") else c for c in search_res]
+                total_found = len(cust_dumps)
+                query_echo = str(query)
+            elif search_res is not None and hasattr(search_res, "model_dump"):
+                cust_dumps = [search_res.model_dump()]
+                total_found = 1
+                query_echo = str(query)
+            elif search_res is not None and isinstance(search_res, dict):
+                cust_dumps = [search_res]
+                total_found = 1
+                query_echo = str(query)
+            else:
+                cust_dumps = []
+                total_found = 0
+                query_echo = str(query)
+
             matched_customer = cust_dumps[0] if cust_dumps else None
 
             output = {
                 "operation": "find_customer",
-                "query": search_res.query,
-                "total_found": search_res.total_found,
+                "query": query_echo,
+                "total_found": total_found,
                 "customers": cust_dumps,
+                "customer": matched_customer,
                 "matched_customer": matched_customer,
                 "status": "COMPLETED",
             }
@@ -259,11 +282,11 @@ class CrmApiExecutor(BaseExecutor):
                 strategy=self.strategy,
                 executor_name=self.name,
                 status=ExecutionStepStatus.SUCCESS,
-                parameters_used={"query": search_res.query},
+                parameters_used={"query": query_echo},
                 output=output,
                 affected_resources=[],
                 selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
-                selection_reason=f"Found {search_res.total_found} customer record(s) via CRM API",
+                selection_reason=f"Found {total_found} customer record(s) via CRM API",
                 fallback_used=False,
                 policy_decision="ALLOWED",
                 start_time=start_time,
@@ -305,7 +328,7 @@ class CrmApiExecutor(BaseExecutor):
         start_time: str,
     ) -> ExecutionStepResult:
         """Executes update_customer_record via the CRM API client."""
-        resolved_params = context.resolved_parameters or {}
+        resolved_params = {**(context.resolved_parameters or {}), **(step.resolved_parameters or {})}
         cust_id = (
             resolved_params.get("customer_id")
             or resolved_params.get("id")
@@ -331,6 +354,8 @@ class CrmApiExecutor(BaseExecutor):
 
         # Build update fields from parameters
         updates: Dict[str, Any] = {}
+        if "customer_status" in resolved_params and resolved_params["customer_status"] is not None:
+            updates["status"] = resolved_params["customer_status"]
         for key in ["status", "notes", "invoice_reference", "recent_attachment_sha256", "company", "name"]:
             if key in resolved_params and resolved_params[key] is not None:
                 updates[key] = resolved_params[key]

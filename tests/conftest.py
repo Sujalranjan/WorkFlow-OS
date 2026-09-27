@@ -11,6 +11,12 @@ if backend_dir not in sys.path:
 if agent_dir not in sys.path:
     sys.path.insert(0, agent_dir)
 
+from dotenv import load_dotenv
+
 # Ensure project environment configuration (.env) is loaded
+env_path = os.path.join(root_dir, ".env")
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path, override=True)
+
 import app.config
 

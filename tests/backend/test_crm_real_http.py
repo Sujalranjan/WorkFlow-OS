@@ -87,6 +87,15 @@ def live_crm_service() -> Generator[str, None, None]:
     host = "127.0.0.1"
     base_url = f"http://{host}:{port}/api/crm"
 
+    # Check if independent CRM server is already running on port 8001
+    try:
+        r = httpx.get(f"{base_url}/health", timeout=0.5)
+        if r.status_code == 200:
+            yield base_url
+            return
+    except Exception:
+        pass
+
     config = uvicorn.Config(crm_app, host=host, port=port, log_level="error")
     server = uvicorn.Server(config)
 

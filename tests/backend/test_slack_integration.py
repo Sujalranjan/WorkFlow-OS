@@ -753,11 +753,22 @@ def test_live_slack_notification_conditional():
 
     If credentials are not configured, records NOT RUN without failing.
     """
-    token = os.getenv("SLACK_BOT_TOKEN")
-    channel = os.getenv("SLACK_CHANNEL_ID")
+    from pathlib import Path
+    from dotenv import load_dotenv
 
-    if not token or not channel or token.startswith("xoxb-placeholder") or token.startswith("xoxb-your"):
-        pytest.skip("LIVE SLACK TEST: NOT RUN (real SLACK_BOT_TOKEN and SLACK_CHANNEL_ID not configured)")
+    env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file, override=True)
+
+    token = os.getenv("SLACK_BOT_TOKEN") or getattr(app.config, "SLACK_BOT_TOKEN", None)
+    channel = os.getenv("SLACK_CHANNEL_ID") or getattr(app.config, "SLACK_CHANNEL_ID", None)
+
+    if not token or not channel or str(token).startswith("xoxb-placeholder") or str(token).startswith("xoxb-your"):
+        pytest.skip(
+            f"LIVE SLACK TEST: NOT RUN (real SLACK_BOT_TOKEN and SLACK_CHANNEL_ID not configured: "
+            f"token_configured={bool(token and not str(token).startswith('xoxb-placeholder'))}, "
+            f"channel_configured={bool(channel)})"
+        )
 
     # Execute real notification
     client = SlackApiClient(bot_token=token, default_channel_id=channel)
@@ -810,14 +821,6 @@ def test_live_slack_notification_conditional():
     )
 
     result = executor.execute(step, ctx)
-    if result.status == ExecutionStepStatus.FAILED:
-        err_msg = str(result.error)
-        if "not_in_channel" in err_msg or "missing_scope" in err_msg:
-            pytest.skip(
-                f"LIVE SLACK TEST: NOT RUN — Slack bot is not added to channel '{channel}' "
-                f"or token lacks required scopes ({err_msg}). Run '/invite @workflowos' in the channel."
-            )
-
     assert result.status == ExecutionStepStatus.SUCCESS
     assert result.output["ts"] is not None
 

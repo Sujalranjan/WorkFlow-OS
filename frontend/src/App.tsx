@@ -15,7 +15,7 @@ import { WorkflowLearningView } from './components/WorkflowLearningView';
 import { PipelineNav, PipelineStageId, StageInfo, StageState } from './components/PipelineNav';
 import { DemoHeader } from './components/DemoHeader';
 import { GuidedDemoPanel, DemoTrackId } from './components/GuidedDemoPanel';
-import { seedDemoActivity, resetDemoState, SeedActivityResponse } from './services/api';
+import { seedDemoActivity, resetDemoState, seedE2EWorkflow, SeedActivityResponse } from './services/api';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -32,12 +32,13 @@ export const App: React.FC = () => {
   const [executionPlans, setExecutionPlans] = useState<ExecutionPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
-  // Guided Demo Mode (Phase 13.5)
+  // Guided Demo Mode (Phase 13.5 & 16)
   const [isGuidedDemoOpen, setIsGuidedDemoOpen] = useState<boolean>(true);
-  const [demoTrack, setDemoTrack] = useState<DemoTrackId>('local');
+  const [demoTrack, setDemoTrack] = useState<DemoTrackId>('phase16');
 
-  // Demo Seeding & Reset Tracker (Phase 15)
+  // Demo Seeding & Reset Tracker (Phase 15 & 16)
   const [isSeedingActivity, setIsSeedingActivity] = useState<boolean>(false);
+  const [isSeedingE2E, setIsSeedingE2E] = useState<boolean>(false);
   const [isResettingDemo, setIsResettingDemo] = useState<boolean>(false);
   const [seedResult, setSeedResult] = useState<SeedActivityResponse | null>(null);
 
@@ -236,6 +237,25 @@ export const App: React.FC = () => {
       setIsSpecLoading(false);
     }
   }, []);
+
+  const handleSeedE2EWorkflow = useCallback(async () => {
+    if (isSeedingE2E) return;
+    setIsSeedingE2E(true);
+    try {
+      const res = await seedE2EWorkflow(false);
+      await fetchSpecifications();
+      setSelectedSpecId(res.workflow_id);
+      setActiveStage('approve');
+      const targetElement = document.getElementById('stage-approve');
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSeedingE2E(false);
+    }
+  }, [isSeedingE2E, fetchSpecifications]);
 
   const fetchExecutionPlans = useCallback(async () => {
     setIsPlanLoading(true);
@@ -637,10 +657,12 @@ export const App: React.FC = () => {
             selectedDnaId={selectedDnaId}
             selectedSpecId={selectedSpecId}
             onSeedActivity={handleSeedDemoActivity}
+            onSeedE2E={handleSeedE2EWorkflow}
             onRunDiscovery={fetchDiscoveryCandidates}
             onExtractDNA={handleExtractDNA}
             onNavigateToStage={handleSelectStage}
             isSeeding={isSeedingActivity}
+            isSeedingE2E={isSeedingE2E}
             isDiscoveryLoading={isDiscoveryLoading}
             isDnaLoading={isDnaLoading}
             isExtractingDNA={isExtractingDNA}

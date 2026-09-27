@@ -86,9 +86,14 @@ class SlackApiExecutor(BaseExecutor):
         if act_norm != "send_notification":
             errors.append(f"SlackApiExecutor does not support action '{step.action}'. Supported: ['send_notification']")
 
-        params = context.resolved_parameters or step.resolved_parameters or {}
+        merged = dict(context.resolved_parameters or {})
+        for k, v in (step.resolved_parameters or {}).items():
+            if v is not None:
+                merged[k] = v
+        params = merged
         msg = params.get("message") or params.get("text") or params.get("content")
-        if not msg and not context.dry_run:
+        has_context_entity = bool(params.get("customer_id") or params.get("customer_name") or params.get("customer"))
+        if not msg and not context.dry_run and not has_context_entity:
             errors.append("Required parameter 'message' or 'text' is missing for send_notification.")
 
         return (len(errors) == 0, errors)
@@ -114,13 +119,20 @@ class SlackApiExecutor(BaseExecutor):
                 end_time=datetime.now(timezone.utc).isoformat(),
             )
 
-        resolved_params = {**(step.resolved_parameters or {}), **(context.resolved_parameters or {})}
+        resolved_params = dict(context.resolved_parameters or {})
+        for k, v in (step.resolved_parameters or {}).items():
+            if v is not None:
+                resolved_params[k] = v
+
         channel_param = resolved_params.get("channel") or resolved_params.get("channel_id")
         message_text = (
             resolved_params.get("message")
             or resolved_params.get("text")
             or resolved_params.get("content")
-            or ""
+            or (
+                f"WorkFlowOS Phase 16 E2E — Customer replacement processed for "
+                f"{resolved_params.get('customer_name') or resolved_params.get('customer_id') or 'customer'}"
+            )
         )
 
         # 2. DRY RUN MODE: Guarantee 0 external API calls and 0 real actions

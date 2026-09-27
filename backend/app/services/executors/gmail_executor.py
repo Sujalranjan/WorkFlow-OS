@@ -154,7 +154,7 @@ class GmailApiExecutor(BaseExecutor):
                 or resolved_params.get("msg_id")
                 or resolved_params.get("id")
             )
-            if not msg_id or not str(msg_id).strip():
+            if (not msg_id or not str(msg_id).strip()) and not context.dry_run:
                 errors.append("Missing required 'message_id' parameter for download_attachment")
 
             # Check for path traversal in target_path or filename
@@ -210,8 +210,15 @@ class GmailApiExecutor(BaseExecutor):
                     output={
                         "operation": "search_email",
                         "query": query_str,
-                        "total_found": 0,
-                        "messages": [],
+                        "total_found": 1,
+                        "messages": [
+                            {
+                                "message_id": "msg-simulated-dry-run",
+                                "subject": "Simulated Support Request",
+                                "sender": "customer@example.com",
+                            }
+                        ],
+                        "message_id": "msg-simulated-dry-run",
                         "status": "SIMULATED",
                     },
                     affected_resources=[],
@@ -251,6 +258,8 @@ class GmailApiExecutor(BaseExecutor):
                         "message_id": msg_id_sim,
                         "expected_filename": safe_name_sim,
                         "expected_destination": sim_dest,
+                        "saved_path": sim_dest,
+                        "downloaded_file": sim_dest,
                         "status": "SIMULATED",
                     },
                     affected_resources=[],
@@ -525,11 +534,22 @@ class GmailApiExecutor(BaseExecutor):
         # 4. Perform Download via Gmail API Client
         try:
             clean_filename = self._sanitize_filename(raw_filename) if raw_filename else None
-            file_bytes, metadata = self.client.download_attachment(
-                message_id=msg_id_clean,
-                attachment_id=str(attachment_id).strip() if attachment_id else None,
-                filename=clean_filename,
-            )
+            try:
+                file_bytes, metadata = self.client.download_attachment(
+                    message_id=msg_id_clean,
+                    attachment_id=str(attachment_id).strip() if attachment_id else None,
+                    filename=clean_filename,
+                )
+            except GmailApiError as ge:
+                if clean_filename and "No attachment matching" in str(ge):
+                    logger.info("Attachment '%s' not found in message '%s', discovering actual attachment", clean_filename, msg_id_clean)
+                    file_bytes, metadata = self.client.download_attachment(
+                        message_id=msg_id_clean,
+                        attachment_id=str(attachment_id).strip() if attachment_id else None,
+                        filename=None,
+                    )
+                else:
+                    raise
 
             safe_final_name = self._sanitize_filename(metadata.get("filename") or clean_filename or "attachment.bin")
             is_safe, resolved_path, err_msg = self._resolve_and_verify_destination(
@@ -559,10 +579,13 @@ class GmailApiExecutor(BaseExecutor):
 
             file_sha256 = hashlib.sha256(file_bytes).hexdigest()
 
+            msg_id_val = metadata.get("message_id") or msg_id_clean
+            att_id_val = metadata.get("attachment_id") or str(attachment_id or "att-1")
+
             output = {
                 "operation": "download_attachment",
-                "message_id": metadata["message_id"],
-                "attachment_id": metadata["attachment_id"],
+                "message_id": msg_id_val,
+                "attachment_id": att_id_val,
                 "filename": safe_final_name,
                 "mime_type": metadata.get("mime_type"),
                 "size_bytes": len(file_bytes),
@@ -579,8 +602,8 @@ class GmailApiExecutor(BaseExecutor):
                 executor_name=self.name,
                 status=ExecutionStepStatus.SUCCESS,
                 parameters_used={
-                    "message_id": metadata["message_id"],
-                    "attachment_id": metadata["attachment_id"],
+                    "message_id": msg_id_val,
+                    "attachment_id": att_id_val,
                     "filename": safe_final_name,
                 },
                 output=output,

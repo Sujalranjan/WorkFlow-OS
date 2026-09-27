@@ -81,6 +81,52 @@ export interface ResetDemoResponse {
   message: string;
 }
 
+export interface SeedE2EWorkflowResponse {
+  workflow_id: string;
+  title: string;
+  status: string;
+  approval_state: string;
+  steps_count: number;
+  steps: string[];
+  message: string;
+}
+
+/**
+ * Seeds the complete Phase 16 Full End-to-End Workflow into WorkFlowOS
+ * (Gmail → Attachment → CRM → Slack).
+ * Calls backend endpoint: POST /api/demo/seed-e2e-workflow
+ */
+export async function seedE2EWorkflow(
+  autoApprove: boolean = false,
+  reviewer?: string
+): Promise<SeedE2EWorkflowResponse> {
+  const url = new URL(`${API_BASE}/api/demo/seed-e2e-workflow`);
+  if (autoApprove) url.searchParams.append('auto_approve', 'true');
+  if (reviewer) url.searchParams.append('reviewer', reviewer);
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    let errorDetail = `HTTP ${response.status}`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) {
+        errorDetail = errorJson.detail;
+      }
+    } catch {
+      errorDetail = response.statusText || errorDetail;
+    }
+    throw new Error(`Failed to seed E2E workflow: ${errorDetail}`);
+  }
+
+  return response.json();
+}
+
 /**
  * Safely clears demonstration state without modifying credentials or application settings.
  * Calls existing backend endpoint: POST /api/demo/reset
@@ -108,4 +154,5 @@ export async function resetDemoState(): Promise<ResetDemoResponse> {
 
   return response.json();
 }
+
 

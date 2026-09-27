@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _ENV_PATH = _PROJECT_ROOT / ".env"
 if _ENV_PATH.exists():
-    load_dotenv(dotenv_path=_ENV_PATH)
+    load_dotenv(dotenv_path=_ENV_PATH, override=True)
 else:
-    load_dotenv()
+    load_dotenv(override=True)
 
 PROJECT_NAME = "WorkFlowOS Backend"
 VERSION = "0.1.0"

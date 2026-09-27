@@ -58,6 +58,7 @@ class SlackVerificationStrategy(BaseVerificationStrategy):
         step: PlannedStep,
         step_result: ExecutionStepResult,
         sandbox_root: str,
+        custom_expectations: Optional[Dict[str, Any]] = None,
     ) -> List[VerificationCheck]:
         output = step_result.output or {}
         channel = output.get("channel") or step.resolved_parameters.get("channel") or "default_channel"

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { PipelineStageId } from './PipelineNav';
 import { CanonicalWorkflowSpec } from '../types/canonical';
 
-export type DemoTrackId = 'local' | 'safety' | 'gmail';
+export type DemoTrackId = 'local' | 'safety' | 'gmail' | 'phase16';
 
 export interface GuidedDemoPanelProps {
   track: DemoTrackId;
@@ -25,11 +25,13 @@ export interface GuidedDemoPanelProps {
   selectedSpecId: string | null;
   // Action callbacks
   onSeedActivity: (scenario?: string) => void;
+  onSeedE2E?: () => void;
   onRunDiscovery: () => void;
   onExtractDNA: (candidateId: string) => void;
   onNavigateToStage: (stageId: PipelineStageId) => void;
   // Loading flags
   isSeeding: boolean;
+  isSeedingE2E?: boolean;
   isDiscoveryLoading: boolean;
   isDnaLoading: boolean;
   isExtractingDNA: boolean;
@@ -55,10 +57,12 @@ export const GuidedDemoPanel: React.FC<GuidedDemoPanelProps> = ({
   selectedDnaId,
   selectedSpecId,
   onSeedActivity,
+  onSeedE2E,
   onRunDiscovery,
   onExtractDNA,
   onNavigateToStage,
   isSeeding,
+  isSeedingE2E,
   isDiscoveryLoading,
   isDnaLoading,
   isExtractingDNA,
@@ -73,6 +77,17 @@ export const GuidedDemoPanel: React.FC<GuidedDemoPanelProps> = ({
       s.workflow_id.toLowerCase().includes('gmail') ||
       s.title.toLowerCase().includes('gmail') ||
       s.steps.some((st) => st.application.toLowerCase() === 'gmail')
+  );
+
+  // Check if Phase 16 Full E2E specification is loaded
+  const phase16Spec = specifications.find(
+    (s) =>
+      s.workflow_id.toLowerCase().includes('phase16') ||
+      s.workflow_id.toLowerCase().includes('e2e') ||
+      s.title.toLowerCase().includes('replacement') ||
+      (s.steps.some((st) => st.application.toLowerCase() === 'gmail') &&
+       s.steps.some((st) => st.application.toLowerCase() === 'crm') &&
+       s.steps.some((st) => st.application.toLowerCase() === 'slack'))
   );
 
   // Helper to determine the current guidance step in Track A
@@ -429,7 +444,133 @@ export const GuidedDemoPanel: React.FC<GuidedDemoPanelProps> = ({
     };
   };
 
-  const guidance = track === 'gmail' ? getTrackBGuidance() : getTrackAGuidance();
+  // Helper for Phase 16 Full Live E2E Track (Gmail → Attachment → CRM → Slack)
+  const getPhase16Guidance = () => {
+    if (!phase16Spec) {
+      return {
+        stageId: 'observe' as PipelineStageId,
+        stepNumber: 1,
+        stepTitle: 'PHASE 16 — Seed Full End-to-End Workflow',
+        badge: 'Gmail → Attachment → CRM → Slack',
+        status: 'Action Required',
+        statusType: 'action-needed',
+        description:
+          'Demonstrate the complete hackathon workflow: Read customer replacement email in Gmail → Download claim document to sandbox → Query customer in Demo CRM → Update CRM record status → Notify team via Slack Web API.',
+        actionLabel: isSeedingE2E ? 'Seeding Workflow...' : 'Seed Phase 16 Full E2E Workflow',
+        actionDisabled: isSeedingE2E,
+        onAction: () => {
+          if (onSeedE2E) {
+            onSeedE2E();
+          }
+        },
+        jumpStageId: 'observe' as PipelineStageId,
+        isHardStop: false,
+        capabilityNote: 'Composes real Gmail API, sandboxed attachment download, real Demo CRM HTTP API, and real Slack Web API',
+      };
+    }
+
+    const isPhase16Approved = phase16Spec.approval_state?.state === 'approved';
+
+    if (!isPhase16Approved) {
+      return {
+        stageId: 'approve' as PipelineStageId,
+        stepNumber: 4,
+        stepTitle: 'PHASE 16 — Human Governance Approval Gate',
+        badge: 'Multi-App Governance',
+        status: '🛑 HARD STOP — Human Approval Required',
+        statusType: 'hard-stop',
+        description:
+          'WorkFlowOS halts before planning or executing external mutations. An operator must inspect and approve the 5-step Canonical Specification before any CRM update or Slack notification can proceed.',
+        actionLabel: 'Review & Approve E2E Specification →',
+        actionDisabled: false,
+        onAction: () => onNavigateToStage('approve'),
+        jumpStageId: 'approve' as PipelineStageId,
+        isHardStop: true,
+        capabilityNote: 'Fail-closed human governance gate. Execution plans cannot be generated without signed approval.',
+      };
+    }
+
+    if (simulatedPlansCount === 0) {
+      return {
+        stageId: 'dry_run' as PipelineStageId,
+        stepNumber: 5,
+        stepTitle: 'PHASE 16 — Zero External Mutation Dry Run',
+        badge: 'Zero External Side-Effects',
+        status: 'Action Required',
+        statusType: 'action-needed',
+        description:
+          'Simulate the full 5-step workflow. Dry run validates parameter bindings (email → message_id → customer_id) and verifies policy allowlists with ZERO modifications to CRM or Slack.',
+        actionLabel: 'Run Dry Run Simulation →',
+        actionDisabled: false,
+        onAction: () => onNavigateToStage('dry_run'),
+        jumpStageId: 'dry_run' as PipelineStageId,
+        isHardStop: false,
+        capabilityNote: 'Provably guarantees 0 real mutations during simulation. Validates complete cross-system parameter flow.',
+      };
+    }
+
+    if (lastExecutionStatus !== 'COMPLETED') {
+      return {
+        stageId: 'execute' as PipelineStageId,
+        stepNumber: 6,
+        stepTitle: 'PHASE 16 — Live Multi-App Execution',
+        badge: 'Live Real Execution',
+        status: '⚠️ Operator Action Required',
+        statusType: 'warning',
+        description:
+          'Execution ready. Triggering execution will execute the 5 real steps: Real Gmail search → Download attachment to sandbox → Real CRM REST API lookup → Real CRM REST API status update → Real Slack Web API chat.postMessage.',
+        actionLabel: 'Execute Live End-to-End Workflow →',
+        actionDisabled: false,
+        onAction: () => onNavigateToStage('execute'),
+        jumpStageId: 'execute' as PipelineStageId,
+        isHardStop: false,
+        capabilityNote: 'Real Gmail search_email + attachment download + CRM REST API + Slack Web API notification',
+      };
+    }
+
+    if (lastVerificationStatus !== 'VERIFIED') {
+      return {
+        stageId: 'verify' as PipelineStageId,
+        stepNumber: 7,
+        stepTitle: 'PHASE 16 — Multi-System Evidence Verification',
+        badge: 'Cross-System Evidence',
+        status: 'Action Required',
+        statusType: 'action-needed',
+        description:
+          'Execution complete! Verification audits post-execution evidence across all systems: Gmail message confirmation, sandbox attachment SHA-256 hash, independent crm.db query, and Slack conversations.history audit.',
+        actionLabel: 'Open Verification Console →',
+        actionDisabled: false,
+        onAction: () => onNavigateToStage('verify'),
+        jumpStageId: 'verify' as PipelineStageId,
+        isHardStop: false,
+        capabilityNote: 'Independent multi-system verification without trusting execution return values',
+      };
+    }
+
+    return {
+      stageId: 'learn' as PipelineStageId,
+      stepNumber: 8,
+      stepTitle: 'PHASE 16 — Reliability Intelligence & Learning',
+      badge: 'Full E2E Verified',
+      status: '✓ Full End-to-End Pipeline Verified',
+      statusType: 'success',
+      description:
+        'Phase 16 End-to-End Workflow complete and verified! The learning engine updates WorkflowReliabilityProfile, tracking step success rates, latency, and parameter suggestions.',
+      actionLabel: 'View Reliability Profile (Stage 8) →',
+      actionDisabled: false,
+      onAction: () => onNavigateToStage('learn'),
+      jumpStageId: 'learn' as PipelineStageId,
+      isHardStop: false,
+      capabilityNote: 'Deterministic reliability profiling and parameter advisory across Gmail, CRM, and Slack',
+    };
+  };
+
+  const guidance =
+    track === 'phase16'
+      ? getPhase16Guidance()
+      : track === 'gmail'
+      ? getTrackBGuidance()
+      : getTrackAGuidance();
 
   const pipelineStages: { id: PipelineStageId; label: string; number: number }[] = [
     { id: 'observe', label: 'OBSERVE', number: 1 },
@@ -449,7 +590,9 @@ export const GuidedDemoPanel: React.FC<GuidedDemoPanelProps> = ({
           <span className="guide-compass-icon">🧭</span>
           <strong>Guided Hackathon Demo:</strong>
           <span className="minimized-track-badge">
-            {track === 'local'
+            {track === 'phase16'
+              ? 'Track C: Full Live E2E'
+              : track === 'local'
               ? 'Track A: Local Sandbox'
               : track === 'safety'
               ? 'Track A: Safety Policy'
@@ -507,6 +650,14 @@ export const GuidedDemoPanel: React.FC<GuidedDemoPanelProps> = ({
         {/* Demo Track Switcher */}
         <div className="guided-track-switcher">
           <span className="track-switcher-label">Scenario:</span>
+          <button
+            type="button"
+            className={`track-switch-btn ${track === 'phase16' ? 'active' : ''}`}
+            onClick={() => onSelectTrack('phase16')}
+            title="Phase 16: Complete Live End-to-End Workflow (Gmail → Attachment → CRM → Slack)"
+          >
+            Track C: Full Live E2E (Gmail → CRM → Slack)
+          </button>
           <button
             type="button"
             className={`track-switch-btn ${track === 'local' ? 'active' : ''}`}
