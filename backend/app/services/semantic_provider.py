@@ -265,7 +265,14 @@ class MockSemanticProvider(SemanticModelProvider):
             if "gmail" in app.lower():
                 action_desc = "Review and open customer replacement request email"
             elif "file" in app.lower():
-                action_desc = "Process downloaded invoice document"
+                if "open" in inv.event_type.lower():
+                    action_desc = "read_file"
+                elif "create" in inv.event_type.lower():
+                    action_desc = "generate_report"
+                elif "download" in inv.event_type.lower() or "save" in inv.event_type.lower():
+                    action_desc = "save_file"
+                else:
+                    action_desc = "process_downloaded_file"
             elif "crm" in app.lower():
                 action_desc = "Locate customer record and update replacement details"
             elif "slack" in app.lower():
@@ -328,18 +335,33 @@ class MockSemanticProvider(SemanticModelProvider):
                 }
             )
 
+        is_local_file_wf = all("file" in inv.application.lower() for inv in dna.invariant_steps)
+        if is_local_file_wf:
+            title = "Local Transaction Reconciliation and Report Generation"
+            intent = "Read local transaction files, generate reconciliation reports inside the sandbox, and save archive artifacts."
+            summary = "End-to-end deterministic local file processing routine executed strictly within the secure sandbox."
+            preconditions = [
+                "Local transaction batch files are accessible in file system.",
+                "Isolated sandbox storage directory is prepared.",
+            ]
+        else:
+            title = "Customer Replacement Request Processing"
+            intent = "Receive incoming customer replacement request, process invoice attachment, update CRM customer record, and send team notification."
+            summary = "End-to-end customer support routine transitioning from Gmail to CRM and Slack with optional auxiliary spreadsheet logging."
+            preconditions = [
+                "User has customer request email received in Gmail.",
+                "CRM application session is accessible.",
+            ]
+
         return {
             "source_dna_id": dna.dna_id,
-            "title": "Customer Replacement Request Processing",
-            "intent": "Receive incoming customer replacement request, process invoice attachment, update CRM customer record, and send team notification.",
-            "summary": "End-to-end customer support routine transitioning from Gmail to CRM and Slack with optional auxiliary spreadsheet logging.",
+            "title": title,
+            "intent": intent,
+            "summary": summary,
             "semantic_steps": semantic_steps,
             "semantic_variables": semantic_vars,
             "optional_steps": optional_steps,
-            "preconditions": [
-                "User has customer request email received in Gmail.",
-                "CRM application session is accessible.",
-            ],
+            "preconditions": preconditions,
             "boundaries": dna.boundaries.model_dump(),
             "evidence_mapping": {
                 "invariants": dna.evidence.invariant_evidence,

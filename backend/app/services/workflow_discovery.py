@@ -15,7 +15,7 @@ class WorkflowDiscoveryEngine:
     1. Signature Normalization: Encodes (application, event_type) into a canonical key.
     2. Noise Filtering: Identifies and strips transient/incidental events (e.g. background apps)
        that occur rarely or outside the core pattern.
-    3. Sequence Similarity: Uses Longest Common Subsequence (LCS) ratio to evaluate
+    3. Sequence Similarity: Deterministic sequence similarity using Python SequenceMatcher ratio to evaluate
        structural alignment rather than strict string equality.
     4. Deterministic Explainability: Records exact occurrence counts, similarity metrics,
        and explainable evidence for each discovered candidate.

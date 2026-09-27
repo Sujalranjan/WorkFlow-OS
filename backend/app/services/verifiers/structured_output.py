@@ -51,10 +51,6 @@ class StructuredOutputVerificationStrategy(BaseVerificationStrategy):
             if res.lower().endswith(".json"):
                 return True
 
-        if step_result.output and isinstance(step_result.output, dict):
-            # Only for local sandbox executions that write files
-            return step_result.executor_name == "ControlledLocalExecutor"
-
         return False
 
     def _resolve_and_verify_sandbox_path(self, target_path_str: str, sandbox_root: str) -> Tuple[bool, Optional[Path], str]:
@@ -91,12 +87,19 @@ class StructuredOutputVerificationStrategy(BaseVerificationStrategy):
         """Builds structured output verification checks."""
         checks: List[VerificationCheck] = []
 
-        target_name = (
-            step.resolved_parameters.get("file_name")
-            or step.resolved_parameters.get("filename")
-        )
-        if not target_name and step_result.affected_resources:
-            target_name = Path(step_result.affected_resources[0]).name
+        target_name = None
+        for res in step_result.affected_resources:
+            if res.lower().endswith(".json"):
+                target_name = Path(res).name
+                break
+
+        if not target_name:
+            fn = (
+                step.resolved_parameters.get("file_name")
+                or step.resolved_parameters.get("filename")
+            )
+            if fn and str(fn).lower().endswith(".json"):
+                target_name = str(fn)
 
         if not target_name:
             target_name = f"step_{step.plan_step_id}_output.json"

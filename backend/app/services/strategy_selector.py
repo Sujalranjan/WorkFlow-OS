@@ -82,8 +82,8 @@ class StrategySelector:
         # 3. Enterprise Applications (CRM, ERP, Database, Salesforce, HubSpot)
         if any(crm in app_lower for crm in ["crm", "salesforce", "hubspot", "database", "erp"]):
             return [
-                ExecutionStrategyType.APPLICATION_INTEGRATION,
                 ExecutionStrategyType.API_INTEGRATION,
+                ExecutionStrategyType.APPLICATION_INTEGRATION,
                 ExecutionStrategyType.ACCESSIBILITY_UI,
                 ExecutionStrategyType.BROWSER_AUTOMATION,
                 ExecutionStrategyType.UI_FALLBACK,

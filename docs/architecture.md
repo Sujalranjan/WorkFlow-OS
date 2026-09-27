@@ -269,7 +269,7 @@ Verification Engine (VerificationEngine)
       ↓
 Verification Strategies (FileSystem, StructuredOutput)
       ↓
-Verification Checks & Tamper-Proof Evidence (SHA256, Size, Path)
+Verification Checks & Cryptographic Integrity Evidence (SHA256, Size, Path)
       ↓
 Verification Result (Aggregated Status)
       ↓
@@ -302,7 +302,7 @@ In accordance with strict safety principles, **Gemini / LLMs are NEVER used to e
    - `file_exists`: Verifies target file exists inside the sandbox.
    - `non_empty_file`: Verifies file size is strictly greater than zero.
    - `directory_exists`: Verifies target folder exists.
-   - Computes cryptographic SHA256 hash, byte size, and path metadata as tamper-proof evidence.
+   - Computes cryptographic SHA-256 hash, byte size, and path metadata as cryptographic integrity evidence.
 2. **`StructuredOutputVerificationStrategy`**:
    - Evaluates JSON payloads inside sandbox files.
    - Deterministically compares expected key-value pairs against actual content.
@@ -312,7 +312,7 @@ In accordance with strict safety principles, **Gemini / LLMs are NEVER used to e
 
 ### 4. Deterministic Evidence Generation
 
-Every verification check generates verifiable, tamper-proof evidence:
+Every verification check generates verifiable cryptographic integrity evidence:
 ```json
 {
   "path": "E:\\WorkFlow OS\\workflowos_sandbox\\exec-123\\customer_replacement_summary.json",

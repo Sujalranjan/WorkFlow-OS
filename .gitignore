@@ -64,3 +64,10 @@ credentials.json
 token.json
 *credentials*.json
 *token*.json
+
+# SQLite Databases & Local Sandbox (Phase 15)
+*.db
+*.sqlite
+*.sqlite3
+workflowos_sandbox/
+

@@ -1,7 +1,7 @@
 """Verification Repository (Phase 9).
 
 SQLite persistence for VerificationResult and VerificationCheck entities.
-Ensures post-execution verification audits, check details, and tamper-proof evidence
+Ensures post-execution verification audits, check details, and cryptographic integrity evidence
 survive backend restarts.
 """
 

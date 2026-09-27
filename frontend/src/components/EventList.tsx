@@ -1,11 +1,16 @@
 import React from 'react';
 import { ActivityEvent } from '../types/event';
+import { SeedActivityResponse } from '../services/api';
 
 interface EventListProps {
   events: ActivityEvent[];
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
+  onSeedDemoActivity?: (scenario?: 'local_file_automation' | 'invoice_processing') => Promise<void>;
+  isSeeding?: boolean;
+  seedResult?: SeedActivityResponse | null;
+  onNavigateToDiscover?: () => void;
 }
 
 export const EventList: React.FC<EventListProps> = ({
@@ -13,6 +18,10 @@ export const EventList: React.FC<EventListProps> = ({
   isLoading,
   error,
   onRefresh,
+  onSeedDemoActivity,
+  isSeeding = false,
+  seedResult = null,
+  onNavigateToDiscover,
 }) => {
   return (
     <section className="events-section">
@@ -24,17 +33,96 @@ export const EventList: React.FC<EventListProps> = ({
         <button
           className="refresh-button"
           onClick={onRefresh}
-          disabled={isLoading}
+          disabled={isLoading || isSeeding}
         >
           {isLoading ? 'Refreshing...' : 'Refresh Events'}
         </button>
+      </div>
+
+      {/* Synthetic Demo Activity Seeding Card (Phase 15) */}
+      <div className="demo-seeding-card">
+        <div className="demo-seeding-content">
+          <div className="demo-seeding-info">
+            <div className="demo-seeding-badge">Synthetic Activity Seeding</div>
+            <strong className="demo-seeding-title">Deterministic Demonstration Traces</strong>
+            <p className="demo-seeding-description">
+              Populate deterministic repeated desktop activity so WorkFlowOS can discover recurring patterns.
+              <strong> Track A</strong> seeds a local filesystem routine (reconciliation &amp; archiving) that executes 100% inside sandbox.
+              <strong> Multi-App</strong> seeds cross-application activity (Gmail, CRM, Slack) to demonstrate that the execution engine safely blocks unimplemented external tools.
+            </p>
+            {events.length > 0 && (
+              <span className="demo-seeding-existing-note">
+                Note: Seeding adds another deterministic set of events to SQLite without deleting existing events. Use <strong>Reset Demo State</strong> in the header if you wish to start from an empty database.
+              </span>
+            )}
+          </div>
+
+          {onSeedDemoActivity && (
+            <div className="demo-seeding-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-seed-activity"
+                onClick={() => onSeedDemoActivity('local_file_automation')}
+                disabled={isSeeding || isLoading}
+                title="Populate SQLite event store with deterministic local filesystem routine"
+              >
+                {isSeeding ? (
+                  <>
+                    <span className="btn-spinner" /> Seeding...
+                  </>
+                ) : (
+                  '⚡ Seed Local Routine (Track A)'
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn-seed-secondary"
+                onClick={() => onSeedDemoActivity('invoice_processing')}
+                disabled={isSeeding || isLoading}
+                title="Populate SQLite event store with cross-app events for policy safety demo"
+              >
+                ⚡ Multi-App Policy Trace
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Post-Seeding Status Banner */}
+        {seedResult && (
+          <div className="demo-seeding-success">
+            <div className="seeding-success-header">
+              <span className="seeding-check">✓</span>
+              <div>
+                <strong className="seeding-success-title">Demo Activity Seeded Successfully</strong>
+                <div className="seeding-success-meta">
+                  {seedResult.events_created} events created &bull; {seedResult.sessions_created} repeated task sessions &bull; Scenario: <code>{seedResult.scenario}</code>
+                </div>
+              </div>
+            </div>
+            <p className="seeding-success-note">
+              Events are now stored in SQLite and visible below. Workflows have NOT been discovered yet.
+              Proceed to Stage 2 to analyze patterns.
+            </p>
+            {onNavigateToDiscover && (
+              <div className="seeding-nav-row">
+                <button
+                  type="button"
+                  className="btn-analyze-activity"
+                  onClick={onNavigateToDiscover}
+                >
+                  Analyze Discovered Activity &rarr;
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {error && <div className="events-error">{error}</div>}
 
       {events.length === 0 && !isLoading && !error && (
         <div className="events-empty">
-          No activity events ingested yet. Switch active windows or add files in watch_folder.
+          No activity events ingested yet. Click <strong>"⚡ Seed Demo Activity"</strong> above to populate sample events, or run the desktop agent with live window &amp; filesystem monitoring.
         </div>
       )}
 
@@ -75,7 +163,7 @@ export const EventList: React.FC<EventListProps> = ({
                     </td>
                     <td>
                       <span className={`origin-badge ${isReal ? 'origin-real' : 'origin-simulated'}`}>
-                        {isReal ? 'Live OS' : 'Simulated'}
+                        {isReal ? 'Live OS' : evt.source === 'demo_seed' ? 'Synthetic Demo' : 'Simulated'}
                       </span>
                     </td>
                     <td className="source-cell">{evt.source}</td>

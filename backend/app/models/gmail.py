@@ -33,3 +33,23 @@ class GmailSearchResult(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="Timestamp of search execution",
     )
+
+
+class GmailAttachmentMetadata(BaseModel):
+    """Normalized structured metadata for a retrieved Gmail attachment.
+
+    Records deterministic file and integrity details without exposing tokens or secrets.
+    """
+    message_id: str = Field(..., description="Unique Gmail message ID containing the attachment")
+    attachment_id: str = Field(..., description="Gmail attachment ID")
+    filename: str = Field(..., description="Safe filename of the attachment")
+    mime_type: Optional[str] = Field(default=None, description="MIME type if available")
+    size_bytes: int = Field(default=0, description="Size of attachment in bytes")
+    saved_path: str = Field(..., description="Controlled local sandbox path where attachment is saved")
+    sha256: str = Field(..., description="Cryptographic integrity evidence using SHA-256")
+    downloaded_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="Timestamp of attachment retrieval",
+    )
+    status: str = Field(default="COMPLETED", description="API execution status")
+

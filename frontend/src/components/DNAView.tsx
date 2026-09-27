@@ -6,6 +6,9 @@ interface DNAViewProps {
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
+  selectedDnaId?: string | null;
+  onSelectDnaId?: (dnaId: string) => void;
+  onNavigateToSemantic?: (dnaId: string) => void;
 }
 
 export const DNAView: React.FC<DNAViewProps> = ({
@@ -13,6 +16,9 @@ export const DNAView: React.FC<DNAViewProps> = ({
   isLoading,
   error,
   onRefresh,
+  selectedDnaId,
+  onSelectDnaId,
+  onNavigateToSemantic,
 }) => {
   return (
     <section className="dna-section">
@@ -44,18 +50,43 @@ export const DNAView: React.FC<DNAViewProps> = ({
       {dnaItems.length > 0 && (
         <div className="dna-grid">
           {dnaItems.map((dna, idx) => {
+            const isSelected = selectedDnaId === dna.dna_id;
+
             return (
-              <div key={dna.dna_id} className="dna-card">
+              <div
+                key={dna.dna_id}
+                id={`dna-card-${dna.dna_id}`}
+                className={`dna-card ${isSelected ? 'selected-dna-card' : ''}`}
+                onClick={() => onSelectDnaId?.(dna.dna_id)}
+                style={{ cursor: 'pointer' }}
+              >
                 {/* Header */}
                 <div className="dna-card-header">
                   <div className="dna-title-group">
                     <span className="dna-helix-icon" role="img" aria-label="DNA">🧬</span>
                     <div>
-                      <h3 className="dna-title">Workflow DNA #{idx + 1}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h3 className="dna-title">Workflow DNA #{idx + 1}</h3>
+                        {isSelected && (
+                          <span className="dna-badge-pill pill-selected">
+                            Selected Workflow DNA
+                          </span>
+                        )}
+                      </div>
                       <span className="dna-id-subtext">{dna.dna_id} &bull; v{dna.version}</span>
                     </div>
                   </div>
                   <div className="dna-meta-badges">
+                    <button
+                      type="button"
+                      className="btn-dna-to-semantic"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigateToSemantic?.(dna.dna_id);
+                      }}
+                    >
+                      Interpret with Gemini &rarr;
+                    </button>
                     <span className="dna-badge-pill pill-sessions">
                       {dna.boundaries.total_supporting_sessions} Sessions
                     </span>
@@ -230,6 +261,26 @@ export const DNAView: React.FC<DNAViewProps> = ({
                       <p>{dna.evidence.ordering_evidence} {dna.evidence.boundary_evidence}</p>
                     </div>
                   </div>
+                </div>
+
+                {/* Transition Action to Stage 3 */}
+                <div className="dna-card-action-bar">
+                  <div className="dna-card-action-meta">
+                    <span className="dna-ready-icon">✦</span>
+                    <span>
+                      Deterministic DNA extracted ({dna.invariant_steps.length} core invariants, {dna.variable_parameters.length} variable parameters). Ready for AI Semantic Understanding.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-dna-action-semantic"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigateToSemantic?.(dna.dna_id);
+                    }}
+                  >
+                    Interpret with Gemini &rarr;
+                  </button>
                 </div>
               </div>
             );

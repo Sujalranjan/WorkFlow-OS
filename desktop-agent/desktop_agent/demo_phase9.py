@@ -339,7 +339,7 @@ def run_phase9_demo() -> None:
 
     # 5. Demonstrate deterministic evidence
     print("\n==================================================================")
-    print(" STEP 8 & 9: DEMONSTRATE TAMPER-PROOF DETERMINISTIC EVIDENCE      ")
+    print(" STEP 8 & 9: DEMONSTRATE CRYPTOGRAPHIC INTEGRITY EVIDENCE (SHA-256) ")
     print("==================================================================")
     for idx, chk in enumerate(verif_res["checks"]):
         print(f"\n   --- Check #{idx+1}: [{chk['check_type']}] on '{chk['target']}' ---")

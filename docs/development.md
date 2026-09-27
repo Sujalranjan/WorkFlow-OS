@@ -188,7 +188,7 @@ Open `http://localhost:5173`.
   - Interactive "Verify Execution" button to trigger deterministic post-execution verification.
   - Per-step comparative card breakdown: Action name, Executor Result, Verification Check, and Final Step State (`VERIFIED`, `VERIFICATION_FAILED`, `EXECUTED_UNVERIFIED`, `NOT_APPLICABLE`).
   - Expected State vs Actual Observed State side-by-side inspection.
-  - Tamper-proof deterministic evidence display (SHA256, byte size, verified sandbox path).
+  - Cryptographic integrity evidence display using SHA-256 (hash, byte size, verified sandbox path).
 - **Execution Plan View**: Parameter resolution, strategy assignments, risk indicators, and dry run simulation.
 - **Semantic Workflow Interpretation View**: Comparative layout showing **Observed Ground Truth** (left) vs **AI Interpretation** (right).
 - **Workflow DNA Analysis**: Structural invariants, variable parameters, optionals, and ordering flow.
@@ -289,7 +289,7 @@ This script demonstrates:
 3. Execution of a safe local action via `ControlledLocalExecutor` inside the sandbox (`workflowos_sandbox/<execution_id>`).
 4. Showing `Executor Result: SUCCESS`.
 5. Running deterministic verification producing `Verification: VERIFIED`.
-6. Inspecting tamper-proof SHA256 evidence.
+6. Inspecting cryptographic integrity evidence using SHA-256.
 7. Demonstrating verification failure (`Executor: SUCCESS` + `Verification: FAILED` → `ACTION EXECUTED BUT EXPECTED STATE WAS NOT VERIFIED`).
 8. Verifying SQLite persistence across repository retrieval.
 9. Confirming zero external service mutations.

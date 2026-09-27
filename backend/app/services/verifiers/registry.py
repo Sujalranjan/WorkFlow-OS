@@ -9,8 +9,10 @@ from app.models.execution import ExecutionStepResult
 from app.models.execution_plan import PlannedStep
 from app.models.verification import VerificationStrategyType
 from app.services.verifiers.base import BaseVerificationStrategy
+from app.services.verifiers.crm_verifier import CrmVerificationStrategy
 from app.services.verifiers.file_system import FileSystemVerificationStrategy
 from app.services.verifiers.gmail_verifier import GmailVerificationStrategy
+from app.services.verifiers.slack_verifier import SlackVerificationStrategy
 from app.services.verifiers.structured_output import StructuredOutputVerificationStrategy
 
 
@@ -19,10 +21,12 @@ class VerificationStrategyRegistry:
 
     def __init__(self) -> None:
         self._strategies: Dict[str, BaseVerificationStrategy] = {}
-        # Register default verification strategies (Phase 9 & Phase 12)
+        # Register default verification strategies (Phase 9, Phase 12, Phase 15B, Phase 15D)
         self.register(FileSystemVerificationStrategy())
         self.register(StructuredOutputVerificationStrategy())
         self.register(GmailVerificationStrategy())
+        self.register(CrmVerificationStrategy())
+        self.register(SlackVerificationStrategy())
 
     def register(self, strategy: BaseVerificationStrategy) -> None:
         """Registers a verification strategy instance."""

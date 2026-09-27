@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { WorkflowDNA } from '../types/dna';
 import { InterpretationResponse, SemanticWorkflow } from '../types/semantic';
+import { CanonicalWorkflowSpec } from '../types/canonical';
+import { createCanonicalSpecification } from '../services/api';
 
 interface SemanticViewProps {
   dnaItems: WorkflowDNA[];
@@ -8,6 +10,11 @@ interface SemanticViewProps {
   isLoading: boolean;
   interpretingDnaId: string | null;
   onInterpret: (dnaId: string, providerType?: string) => Promise<void>;
+  onSpecificationCreated?: (spec: CanonicalWorkflowSpec) => void;
+  onNavigateToApprove?: (workflowId: string) => void;
+  existingSpecifications?: CanonicalWorkflowSpec[];
+  selectedDnaId?: string | null;
+  onSelectDnaId?: (dnaId: string) => void;
 }
 
 export const SemanticView: React.FC<SemanticViewProps> = ({
@@ -16,12 +23,38 @@ export const SemanticView: React.FC<SemanticViewProps> = ({
   isLoading,
   interpretingDnaId,
   onInterpret,
+  onSpecificationCreated,
+  onNavigateToApprove,
+  existingSpecifications = [],
+  selectedDnaId,
+  onSelectDnaId,
 }) => {
   const [providerOverride, setProviderOverride] = useState<string>('default');
+  const [generatingSpecMap, setGeneratingSpecMap] = useState<Record<string, boolean>>({});
+  const [createdSpecMap, setCreatedSpecMap] = useState<Record<string, CanonicalWorkflowSpec>>({});
+  const [specErrorMap, setSpecErrorMap] = useState<Record<string, string | null>>({});
 
   if (dnaItems.length === 0) {
     return null;
   }
+
+  const handleGenerateCanonicalSpec = async (semanticWorkflowId: string) => {
+    if (generatingSpecMap[semanticWorkflowId]) return;
+
+    setGeneratingSpecMap((prev) => ({ ...prev, [semanticWorkflowId]: true }));
+    setSpecErrorMap((prev) => ({ ...prev, [semanticWorkflowId]: null }));
+
+    try {
+      const spec = await createCanonicalSpecification(semanticWorkflowId);
+      setCreatedSpecMap((prev) => ({ ...prev, [semanticWorkflowId]: spec }));
+      onSpecificationCreated?.(spec);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setSpecErrorMap((prev) => ({ ...prev, [semanticWorkflowId]: message }));
+    } finally {
+      setGeneratingSpecMap((prev) => ({ ...prev, [semanticWorkflowId]: false }));
+    }
+  };
 
   return (
     <section className="semantic-section">
@@ -53,13 +86,36 @@ export const SemanticView: React.FC<SemanticViewProps> = ({
           const resp = interpretations[dna.dna_id];
           const isInterpretingThis = interpretingDnaId === dna.dna_id;
           const semWf: SemanticWorkflow | null = resp?.semantic_workflow || null;
+          const isSelected = selectedDnaId === dna.dna_id;
+
+          // Check if a CanonicalWorkflowSpec already exists for this semantic workflow
+          const existingSpec =
+            semWf
+              ? createdSpecMap[semWf.semantic_workflow_id] ||
+                existingSpecifications.find(
+                  (s) =>
+                    s.source_semantic_workflow_id === semWf.semantic_workflow_id ||
+                    s.source_dna_id === dna.dna_id
+                )
+              : null;
+
+          const isGeneratingThis = semWf ? Boolean(generatingSpecMap[semWf.semantic_workflow_id]) : false;
+          const specError = semWf ? specErrorMap[semWf.semantic_workflow_id] : null;
 
           return (
-            <div key={dna.dna_id} className="semantic-comparison-card">
+            <div
+              key={dna.dna_id}
+              id={`semantic-dna-${dna.dna_id}`}
+              className={`semantic-comparison-card ${isSelected ? 'selected-semantic-card' : ''}`}
+              onClick={() => onSelectDnaId?.(dna.dna_id)}
+            >
               {/* Card Action Bar */}
               <div className="comparison-action-bar">
                 <div className="comparison-title-meta">
                   <span className="source-dna-tag">Source DNA: <code>{dna.dna_id}</code></span>
+                  {isSelected && (
+                    <span className="selected-dna-target-badge">● Active Pipeline Target</span>
+                  )}
                   <span className="status-pill-badge">
                     {semWf ? '✓ Semantic Interpretation Active' : 'Deterministic DNA Ready for AI Interpretation'}
                   </span>
@@ -256,6 +312,79 @@ export const SemanticView: React.FC<SemanticViewProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Phase 13.2 Transition Action: Generate Canonical Specification */}
+              {semWf && (
+                <div className="semantic-transition-wrapper">
+                  {existingSpec ? (
+                    <div className="canonical-transition-card success-transition">
+                      <div className="transition-header">
+                        <span className="transition-check-icon">✓</span>
+                        <div className="transition-header-text">
+                          <strong className="transition-title">Canonical Specification Ready</strong>
+                          <div className="transition-meta">
+                            Workflow ID: <code>{existingSpec.workflow_id}</code> &bull; Approval State:{' '}
+                            <span className={`approval-pill ${existingSpec.approval_state.state}`}>
+                              {existingSpec.approval_state.state.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="transition-description">
+                        Formal contract assembled with {existingSpec.steps?.length || 0} canonical steps and{' '}
+                        {existingSpec.parameter_bindings?.length || existingSpec.variables?.length || 0} parameter bindings. Ready for human review and governance acceptance.
+                      </p>
+                      <div className="transition-actions">
+                        <button
+                          type="button"
+                          className="btn-review-approve"
+                          onClick={() => onNavigateToApprove?.(existingSpec.workflow_id)}
+                        >
+                          Review &amp; Approve Specification &rarr;
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="canonical-transition-card action-transition">
+                      <div className="transition-header">
+                        <span className="transition-icon">📜</span>
+                        <div className="transition-header-text">
+                          <strong className="transition-title">Formal Workflow Contract Assembly</strong>
+                          <p className="transition-subtitle">
+                            This creates the formal canonical workflow specification with deterministic parameter bindings and risk analysis for human review and approval.
+                          </p>
+                        </div>
+                      </div>
+
+                      {specError && (
+                        <div className="transition-error-banner">
+                          <span className="error-icon">⚠</span>
+                          <div>
+                            <strong>Failed to generate specification:</strong> {specError}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="transition-actions">
+                        <button
+                          type="button"
+                          className="btn-generate-canonical"
+                          disabled={isGeneratingThis || isLoading}
+                          onClick={() => handleGenerateCanonicalSpec(semWf.semantic_workflow_id)}
+                        >
+                          {isGeneratingThis ? (
+                            <>
+                              <span className="btn-spinner" /> Generating Canonical Specification...
+                            </>
+                          ) : (
+                            'Generate Canonical Specification'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CanonicalWorkflowSpec, ParameterBinding } from '../types/canonical';
 import { SemanticWorkflow } from '../types/semantic';
 
@@ -11,6 +11,8 @@ interface CanonicalSpecViewProps {
   onReject: (workflowId: string, reason: string) => Promise<void>;
   onUpdateParameters: (workflowId: string, updates: { source_parameter: string; semantic_name: string }[]) => Promise<void>;
   onRefresh: () => void;
+  selectedWorkflowId?: string | null;
+  onSelectWorkflowId?: (workflowId: string) => void;
 }
 
 export const CanonicalSpecView: React.FC<CanonicalSpecViewProps> = ({
@@ -22,15 +24,23 @@ export const CanonicalSpecView: React.FC<CanonicalSpecViewProps> = ({
   onReject,
   onUpdateParameters,
   onRefresh,
+  selectedWorkflowId: selectedWorkflowIdProp,
+  onSelectWorkflowId,
 }) => {
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(selectedWorkflowIdProp || null);
   const [editingParams, setEditingParams] = useState<Record<string, string>>({});
   const [rejectReason, setRejectReason] = useState<string>('');
   const [isRejecting, setIsRejecting] = useState<boolean>(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (selectedWorkflowIdProp) {
+      setSelectedWorkflowId(selectedWorkflowIdProp);
+    }
+  }, [selectedWorkflowIdProp]);
+
   // Automatically select first spec if none selected
-  const activeSpec = specifications.find((s) => s.workflow_id === selectedWorkflowId) || specifications[0] || null;
+  const activeSpec = specifications.find((s) => s.workflow_id === (selectedWorkflowIdProp || selectedWorkflowId)) || specifications[0] || null;
 
   const handleStartParamEdit = (b: ParameterBinding) => {
     setEditingParams((prev) => ({
@@ -194,7 +204,10 @@ export const CanonicalSpecView: React.FC<CanonicalSpecViewProps> = ({
           {specifications.map((s) => (
             <button
               key={s.workflow_id}
-              onClick={() => setSelectedWorkflowId(s.workflow_id)}
+              onClick={() => {
+                setSelectedWorkflowId(s.workflow_id);
+                onSelectWorkflowId?.(s.workflow_id);
+              }}
               style={{
                 background: (activeSpec?.workflow_id === s.workflow_id) ? 'rgba(99, 102, 241, 0.2)' : 'rgba(15, 23, 42, 0.6)',
                 border: (activeSpec?.workflow_id === s.workflow_id) ? '1px solid #6366f1' : '1px solid rgba(255, 255, 255, 0.1)',

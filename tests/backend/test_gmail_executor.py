@@ -270,16 +270,16 @@ def test_gmail_executor_capability_is_registered():
 
 
 def test_gmail_executor_is_only_newly_implemented_external_executor():
-    """2. Test Gmail executor is the only newly implemented external executor."""
+    """2. Test external executors: ControlledLocal, GmailApi, CrmApi, and SlackApi are implemented."""
     registry = ExecutorRegistry()
     caps = registry.get_all_capabilities()
     implemented_caps = [c for c in caps if c.implemented]
     names = {c.executor_name for c in implemented_caps}
-    assert names == {"ControlledLocalExecutor", "GmailApiExecutor"}
+    assert names == {"ControlledLocalExecutor", "GmailApiExecutor", "CrmApiExecutor", "SlackApiExecutor"}
 
-    # All other external executors remain unimplemented
+    # All other external executors (e.g. Browser, UI) remain unimplemented
     for c in caps:
-        if c.executor_name not in ("ControlledLocalExecutor", "GmailApiExecutor"):
+        if c.executor_name not in ("ControlledLocalExecutor", "GmailApiExecutor", "CrmApiExecutor", "SlackApiExecutor"):
             assert c.implemented is False, f"Executor {c.executor_name} must NOT be marked implemented"
 
 
@@ -339,7 +339,8 @@ def test_unrelated_actions_do_not_select_gmail_executor():
     )
     res_slack = selector.select_strategy(slack_step)
     assert res_slack.selected_executor != "GmailApiExecutor"
-    assert res_slack.is_executable is False
+    assert res_slack.selected_executor == "SlackApiExecutor"
+    assert res_slack.is_executable is True
 
     # Unrelated 2: Gmail mutation (send_email)
     gmail_send = PlannedStep(
@@ -671,11 +672,12 @@ def test_security_no_mutation_methods_exposed():
     """18. Test GmailApiExecutor does NOT implement or expose any mutation methods."""
     executor = GmailApiExecutor()
     cap = executor.capability
-    # Must only declare search_email
-    assert cap.supported_actions == ["search_email"]
+    # Must only declare read-only actions: search_email and download_attachment
+    assert cap.supported_actions == ["search_email", "download_attachment"]
     # Check that forbidden methods do not exist
     for forbidden in ["send_email", "delete_email", "modify_email", "trash_message", "add_label"]:
         assert not hasattr(executor, forbidden), f"Forbidden method '{forbidden}' exposed on GmailApiExecutor"
+
 
 
 def test_security_no_arbitrary_requests_allowed(sample_gmail_step):

@@ -4,7 +4,7 @@ import { DiscoveryCandidate } from './types/discovery';
 import { WorkflowDNA } from './types/dna';
 import { InterpretationResponse, SemanticWorkflow } from './types/semantic';
 import { CanonicalWorkflowSpec } from './types/canonical';
-import { ExecutionPlan } from './types/execution';
+import { ExecutionPlan, ExecutionAuditRecord, VerificationResult } from './types/execution';
 import { EventList } from './components/EventList';
 import { DiscoveryView } from './components/DiscoveryView';
 import { DNAView } from './components/DNAView';
@@ -12,17 +12,42 @@ import { SemanticView } from './components/SemanticView';
 import { CanonicalSpecView } from './components/CanonicalSpecView';
 import { ExecutionPlanView } from './components/ExecutionPlanView';
 import { WorkflowLearningView } from './components/WorkflowLearningView';
+import { PipelineNav, PipelineStageId, StageInfo, StageState } from './components/PipelineNav';
+import { DemoHeader } from './components/DemoHeader';
+import { GuidedDemoPanel, DemoTrackId } from './components/GuidedDemoPanel';
+import { seedDemoActivity, resetDemoState, SeedActivityResponse } from './services/api';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
 export const App: React.FC = () => {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [dnaItems, setDnaItems] = useState<WorkflowDNA[]>([]);
+  const [selectedDnaId, setSelectedDnaId] = useState<string | null>(null);
+  const [isExtractingDNA, setIsExtractingDNA] = useState<boolean>(false);
   const [interpretations, setInterpretations] = useState<Record<string, InterpretationResponse>>({});
   const [specifications, setSpecifications] = useState<CanonicalWorkflowSpec[]>([]);
+  const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
   const [executionPlans, setExecutionPlans] = useState<ExecutionPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+
+  // Guided Demo Mode (Phase 13.5)
+  const [isGuidedDemoOpen, setIsGuidedDemoOpen] = useState<boolean>(true);
+  const [demoTrack, setDemoTrack] = useState<DemoTrackId>('local');
+
+  // Demo Seeding & Reset Tracker (Phase 15)
+  const [isSeedingActivity, setIsSeedingActivity] = useState<boolean>(false);
+  const [isResettingDemo, setIsResettingDemo] = useState<boolean>(false);
+  const [seedResult, setSeedResult] = useState<SeedActivityResponse | null>(null);
+
+  // Pipeline Execution / Verification Tracker
+  const [lastExecutionRecord, setLastExecutionRecord] = useState<ExecutionAuditRecord | null>(null);
+  const [lastVerificationResult, setLastVerificationResult] = useState<VerificationResult | null>(null);
+  const [activeStage, setActiveStage] = useState<PipelineStageId>('observe');
+  const [executionPlanTab, setExecutionPlanTab] = useState<
+    'plan' | 'parameters' | 'strategies' | 'state_changes' | 'dry_run' | 'live_execution' | 'verification'
+  >('plan');
 
   const [isEventsLoading, setIsEventsLoading] = useState<boolean>(false);
   const [isDiscoveryLoading, setIsDiscoveryLoading] = useState<boolean>(false);
@@ -34,6 +59,20 @@ export const App: React.FC = () => {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [dnaError, setDnaError] = useState<string | null>(null);
+
+  // Keep first candidate selected by default if available
+  useEffect(() => {
+    if (candidates.length > 0 && !selectedCandidateId) {
+      setSelectedCandidateId(candidates[0].candidate_id);
+    }
+  }, [candidates, selectedCandidateId]);
+
+  // Keep first DNA selected by default if available
+  useEffect(() => {
+    if (dnaItems.length > 0 && !selectedDnaId) {
+      setSelectedDnaId(dnaItems[0].dna_id);
+    }
+  }, [dnaItems, selectedDnaId]);
 
   const fetchEvents = useCallback(async () => {
     setIsEventsLoading(true);
@@ -51,6 +90,50 @@ export const App: React.FC = () => {
       setIsEventsLoading(false);
     }
   }, []);
+
+  const handleSeedDemoActivity = useCallback(async (scenario?: string) => {
+    if (isSeedingActivity) return;
+    setIsSeedingActivity(true);
+    try {
+      const targetScenario = scenario || (demoTrack === 'safety' ? 'invoice_processing' : 'local_file_automation');
+      const res = await seedDemoActivity(targetScenario);
+      setSeedResult(res);
+      await fetchEvents();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSeedingActivity(false);
+    }
+  }, [isSeedingActivity, demoTrack, fetchEvents]);
+
+  const handleResetDemoState = useCallback(async () => {
+    if (isResettingDemo) return;
+    setIsResettingDemo(true);
+    try {
+      const res = await resetDemoState();
+      // Safely reset all local UI workflow states to return to clean OBSERVE state
+      setEvents([]);
+      setCandidates([]);
+      setSelectedCandidateId(null);
+      setDnaItems([]);
+      setSelectedDnaId(null);
+      setInterpretations({});
+      setSpecifications([]);
+      setSelectedSpecId(null);
+      setExecutionPlans([]);
+      setSelectedPlanId(null);
+      setLastExecutionRecord(null);
+      setLastVerificationResult(null);
+      setSeedResult(null);
+      setActiveStage('observe');
+      setExecutionPlanTab('plan');
+      alert(`Demo state reset successfully. Cleared ${res.events_deleted} activity events and demonstration records.`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsResettingDemo(false);
+    }
+  }, [isResettingDemo]);
 
   const fetchDiscoveryCandidates = useCallback(async () => {
     setIsDiscoveryLoading(true);
@@ -79,11 +162,64 @@ export const App: React.FC = () => {
       }
       const data = await response.json();
       setDnaItems(data.dna_items || []);
+      if (data.dna_items && data.dna_items.length > 0 && !selectedDnaId) {
+        setSelectedDnaId(data.dna_items[0].dna_id);
+      }
     } catch (err: unknown) {
       setDnaError(err instanceof Error ? err.message : 'An unexpected error occurred while extracting Workflow DNA');
     } finally {
       setIsDnaLoading(false);
     }
+  }, [selectedDnaId]);
+
+  const handleExtractDNA = useCallback(async (candidateId: string) => {
+    if (isExtractingDNA) return;
+    setIsExtractingDNA(true);
+    setDnaError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/workflows/dna?limit=500&inactivity_timeout=120&min_occurrences=2&similarity_threshold=0.65`);
+      if (!response.ok) {
+        throw new Error(`Failed to extract Workflow DNA: HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const items: WorkflowDNA[] = data.dna_items || [];
+      setDnaItems(items);
+
+      // Find the DNA corresponding to this candidate
+      const matched = items.find(
+        (d) => d.source_candidate_id === candidateId || d.dna_id === `dna-${candidateId}`
+      );
+      const targetId = matched ? matched.dna_id : (items[0]?.dna_id || null);
+      if (targetId) {
+        setSelectedDnaId(targetId);
+      }
+      setSelectedCandidateId(candidateId);
+    } catch (err: unknown) {
+      setDnaError(err instanceof Error ? err.message : 'An unexpected error occurred while extracting Workflow DNA');
+    } finally {
+      setIsExtractingDNA(false);
+    }
+  }, [isExtractingDNA]);
+
+  const handleNavigateToSemantic = useCallback((dnaId: string) => {
+    setSelectedDnaId(dnaId);
+    setActiveStage('understand');
+    setTimeout(() => {
+      const target = document.getElementById(`semantic-dna-${dnaId}`) || document.getElementById('stage-understand');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 50);
+  }, []);
+
+  const handleNavigateToDNA = useCallback((dnaId: string) => {
+    setSelectedDnaId(dnaId);
+    setTimeout(() => {
+      const target = document.getElementById(`dna-card-${dnaId}`) || document.getElementById('stage-discover');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 50);
   }, []);
 
   const fetchSpecifications = useCallback(async () => {
@@ -137,6 +273,8 @@ export const App: React.FC = () => {
       const newPlan: ExecutionPlan = await response.json();
       setExecutionPlans((prev) => [newPlan, ...prev.filter((p) => p.execution_plan_id !== newPlan.execution_plan_id)]);
       setSelectedPlanId(newPlan.execution_plan_id);
+      setActiveStage('dry_run');
+      setExecutionPlanTab('plan');
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -167,6 +305,7 @@ export const App: React.FC = () => {
         ...prev,
         [dnaId]: data,
       }));
+      setActiveStage('understand');
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown interpretation error';
       setInterpretations((prev) => ({
@@ -194,7 +333,14 @@ export const App: React.FC = () => {
       if (!response.ok) {
         throw new Error(`Specification creation failed: HTTP ${response.status}`);
       }
+      const newSpec: CanonicalWorkflowSpec = await response.json();
       await fetchSpecifications();
+      setSelectedSpecId(newSpec.workflow_id);
+      setActiveStage('approve');
+      const targetElement = document.getElementById('stage-approve');
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth' });
+      }
     } finally {
       setIsSpecLoading(false);
     }
@@ -273,117 +419,447 @@ export const App: React.FC = () => {
 
   const selectedExecutionPlan = executionPlans.find((p) => p.execution_plan_id === selectedPlanId) || executionPlans[0] || null;
 
+  // Pipeline stage navigation handler
+  const handleSelectStage = useCallback((stageId: PipelineStageId) => {
+    setActiveStage(stageId);
+    if (stageId === 'dry_run') {
+      setExecutionPlanTab('dry_run');
+    } else if (stageId === 'execute') {
+      setExecutionPlanTab('live_execution');
+    } else if (stageId === 'verify') {
+      setExecutionPlanTab('verification');
+    }
+
+    const targetElementId =
+      stageId === 'dry_run' || stageId === 'execute' || stageId === 'verify'
+        ? 'stage-execution'
+        : `stage-${stageId}`;
+
+    const targetElement = document.getElementById(targetElementId);
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
+
+  // Compute honest, derived stage states
+  const approvedSpecs = specifications.filter((s) => s.approval_state?.state === 'approved');
+  const simulatedPlans = executionPlans.filter((p) => p.dry_run_status?.toLowerCase() === 'simulated');
+
+  const getStageState = (stageId: PipelineStageId): StageState => {
+    if (activeStage === stageId) return 'current';
+
+    switch (stageId) {
+      case 'observe':
+        return events.length > 0 ? 'completed' : 'current';
+      case 'discover':
+        return (selectedDnaId || dnaItems.length > 0)
+          ? 'completed'
+          : candidates.length > 0
+          ? 'pending'
+          : 'pending';
+      case 'understand':
+        return validSemanticWorkflows.length > 0
+          ? 'completed'
+          : 'pending';
+      case 'approve':
+        if (approvedSpecs.length > 0) return 'completed';
+        if (specifications.some((s) => s.approval_state?.state === 'rejected')) return 'blocked';
+        return specifications.length > 0 ? 'pending' : 'pending';
+      case 'dry_run':
+        if (simulatedPlans.length > 0) return 'completed';
+        if (executionPlans.some((p) => p.dry_run_status?.toLowerCase() === 'simulation_blocked')) return 'blocked';
+        return approvedSpecs.length > 0 ? 'pending' : 'blocked';
+      case 'execute':
+        if (lastExecutionRecord?.status === 'COMPLETED') return 'completed';
+        if (lastExecutionRecord?.status === 'BLOCKED' || lastExecutionRecord?.status === 'FAILED') return 'blocked';
+        return simulatedPlans.length > 0 ? 'pending' : 'blocked';
+      case 'verify':
+        if (lastVerificationResult?.overall_status === 'VERIFIED') return 'completed';
+        if (lastVerificationResult?.overall_status === 'FAILED') return 'blocked';
+        return lastExecutionRecord?.status === 'COMPLETED' ? 'pending' : 'blocked';
+      case 'learn':
+        return lastVerificationResult || lastExecutionRecord ? 'completed' : 'pending';
+      default:
+        return 'pending';
+    }
+  };
+
+  const stages: StageInfo[] = [
+    {
+      id: 'observe',
+      number: 1,
+      label: 'OBSERVE',
+      subtitle: 'Desktop Events',
+      state: getStageState('observe'),
+      stateDetail: events.length > 0 ? `${events.length} events logged` : 'Awaiting activity',
+      badge: events.length > 0 ? `${events.length}` : undefined,
+    },
+    {
+      id: 'discover',
+      number: 2,
+      label: 'DISCOVER',
+      subtitle: 'Patterns & DNA',
+      state: getStageState('discover'),
+      stateDetail:
+        selectedDnaId && dnaItems.length > 0
+          ? `${dnaItems.length} DNA extracted &bull; Selected: ${selectedDnaId}`
+          : candidates.length > 0
+          ? `${candidates.length} candidate(s) discovered`
+          : 'Clustering patterns',
+      badge: selectedDnaId ? 'DNA ✓' : candidates.length > 0 ? `${candidates.length}` : undefined,
+    },
+    {
+      id: 'understand',
+      number: 3,
+      label: 'UNDERSTAND',
+      subtitle: 'Gemini Semantic Intent',
+      state: getStageState('understand'),
+      stateDetail:
+        validSemanticWorkflows.length > 0
+          ? `${validSemanticWorkflows.length} intent model(s)`
+          : selectedDnaId
+          ? `Ready to interpret ${selectedDnaId}`
+          : 'AI translation',
+      badge: validSemanticWorkflows.length > 0 ? `${validSemanticWorkflows.length}` : undefined,
+    },
+    {
+      id: 'approve',
+      number: 4,
+      label: 'APPROVE',
+      subtitle: 'Governance & Contract',
+      state: getStageState('approve'),
+      stateDetail:
+        approvedSpecs.length > 0
+          ? `${approvedSpecs.length} approved`
+          : specifications.length > 0
+          ? `${specifications.length} pending review`
+          : 'Awaiting spec',
+      badge: approvedSpecs.length > 0 ? '✓' : undefined,
+    },
+    {
+      id: 'dry_run',
+      number: 5,
+      label: 'DRY RUN',
+      subtitle: 'Zero Side-Effect Sim',
+      state: getStageState('dry_run'),
+      stateDetail:
+        simulatedPlans.length > 0
+          ? `${simulatedPlans.length} simulated`
+          : approvedSpecs.length > 0
+          ? 'Ready to simulate'
+          : 'Needs approval',
+      badge: simulatedPlans.length > 0 ? '0 side-effects' : undefined,
+    },
+    {
+      id: 'execute',
+      number: 6,
+      label: 'EXECUTE',
+      subtitle: 'Sandbox / Gmail API',
+      state: getStageState('execute'),
+      stateDetail:
+        lastExecutionRecord?.status === 'COMPLETED'
+          ? 'Completed'
+          : lastExecutionRecord?.status === 'BLOCKED'
+          ? 'Blocked by policy'
+          : simulatedPlans.length > 0
+          ? 'Ready for sandbox'
+          : 'Needs dry-run',
+      badge: lastExecutionRecord ? lastExecutionRecord.status : undefined,
+    },
+    {
+      id: 'verify',
+      number: 7,
+      label: 'VERIFY',
+      subtitle: 'Deterministic Evidence',
+      state: getStageState('verify'),
+      stateDetail:
+        lastVerificationResult?.overall_status === 'VERIFIED'
+          ? 'Verified success'
+          : lastVerificationResult?.overall_status === 'FAILED'
+          ? 'Verification failed'
+          : lastExecutionRecord?.status === 'COMPLETED'
+          ? 'Ready to verify'
+          : 'Needs execution',
+      badge: lastVerificationResult ? lastVerificationResult.overall_status : undefined,
+    },
+    {
+      id: 'learn',
+      number: 8,
+      label: 'LEARN',
+      subtitle: 'Reliability Intelligence',
+      state: getStageState('learn'),
+      stateDetail: 'Profiles & advisory',
+    },
+  ];
+
   return (
     <div className="app-container">
-      <header className="navbar">
+      <nav className="navbar">
         <div className="nav-brand">
           <div className="brand-icon">W</div>
           <span className="brand-title">WorkFlowOS</span>
         </div>
-        <div className="nav-phase-badge">Phase 11: Workflow Learning & Reliability Intelligence</div>
-      </header>
+        <div className="nav-phase-badge">Phase 15: Hackathon Demo Packaging</div>
+      </nav>
 
       <main className="main-content">
-        <section className="hero-section">
-          <div className="hero-subtitle">Desktop Automation Intelligence</div>
-          <h1 className="hero-title">
-            WorkFlowOS<br />
-            AI-Powered Workflow Automation
-          </h1>
-          <p className="hero-description">
-            Observes routine digital work, identifies repeated patterns, translates intent via AI,
-            assembles formal canonical workflow contracts, and requires human approval before any automation.
-          </p>
+        {/* Top-Level Demo Header with Capability Transparency */}
+        <DemoHeader
+          eventCount={events.length}
+          approvedSpecCount={approvedSpecs.length}
+          simulatedPlanCount={simulatedPlans.length}
+          verifiedExecutionCount={lastVerificationResult?.overall_status === 'VERIFIED' ? 1 : 0}
+          onRefreshAll={refreshAll}
+          isLoading={isEventsLoading || isDiscoveryLoading || isDnaLoading || isSpecLoading || isPlanLoading}
+          isGuidedDemoOpen={isGuidedDemoOpen}
+          onToggleGuidedDemo={() => setIsGuidedDemoOpen((prev) => !prev)}
+          onResetDemo={handleResetDemoState}
+          isResetting={isResettingDemo}
+        />
+
+        {/* Phase 13.5: Guided Hackathon Demo Mode Controller Panel */}
+        {isGuidedDemoOpen && (
+          <GuidedDemoPanel
+            track={demoTrack}
+            onSelectTrack={setDemoTrack}
+            onClose={() => setIsGuidedDemoOpen(false)}
+            eventsCount={events.length}
+            candidatesCount={candidates.length}
+            dnaCount={dnaItems.length}
+            semanticWorkflowCount={validSemanticWorkflows.length}
+            specifications={specifications}
+            approvedSpecsCount={approvedSpecs.length}
+            executionPlansCount={executionPlans.length}
+            simulatedPlansCount={simulatedPlans.length}
+            lastExecutionStatus={lastExecutionRecord?.status || null}
+            lastVerificationStatus={lastVerificationResult?.overall_status || null}
+            selectedCandidateId={selectedCandidateId}
+            selectedDnaId={selectedDnaId}
+            selectedSpecId={selectedSpecId}
+            onSeedActivity={handleSeedDemoActivity}
+            onRunDiscovery={fetchDiscoveryCandidates}
+            onExtractDNA={handleExtractDNA}
+            onNavigateToStage={handleSelectStage}
+            isSeeding={isSeedingActivity}
+            isDiscoveryLoading={isDiscoveryLoading}
+            isDnaLoading={isDnaLoading}
+            isExtractingDNA={isExtractingDNA}
+            isSpecLoading={isSpecLoading}
+            isPlanLoading={isPlanLoading}
+          />
+        )}
+
+        {/* Sticky Unified Pipeline Navigation */}
+        <PipelineNav
+          stages={stages}
+          activeStage={activeStage}
+          onSelectStage={handleSelectStage}
+        />
+
+        {/* ================================================================= */}
+        {/* STAGE 1: OBSERVE — Live Desktop Activity Event Stream             */}
+        {/* ================================================================= */}
+        <section id="stage-observe" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stage 1</span>
+              <span className="stage-section-name">OBSERVE — Desktop Activity Capture</span>
+            </div>
+            <span className="stage-section-hint">Raw event stream from Windows hooks & collectors</span>
+          </div>
+
+          <EventList
+            events={events}
+            isLoading={isEventsLoading}
+            error={eventsError}
+            onRefresh={fetchEvents}
+            onSeedDemoActivity={handleSeedDemoActivity}
+            isSeeding={isSeedingActivity}
+            seedResult={seedResult}
+            onNavigateToDiscover={() => handleSelectStage('discover')}
+          />
         </section>
 
-        <section className="status-grid">
-          <div className="status-card">
-            <div className="card-header">
-              <h2 className="card-title">Discovery Engine</h2>
-              <div className="indicator" title="Pattern Discovery Ready"></div>
+        {/* ================================================================= */}
+        {/* STAGE 2: DISCOVER — Segmentation & Workflow DNA Extraction         */}
+        {/* ================================================================= */}
+        <section id="stage-discover" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stage 2</span>
+              <span className="stage-section-name">DISCOVER — Repeated Patterns & Workflow DNA</span>
             </div>
-            <p className="card-text">
-              Noise-tolerant sequence clustering and normalized signature matching across sessions.
-            </p>
-            <div className="card-meta">Phase 3: Repeated Sequence Discovery</div>
+            <span className="stage-section-hint">Noise-tolerant clustering, invariants & parameter variance</span>
           </div>
 
-          <div className="status-card">
-            <div className="card-header">
-              <h2 className="card-title">Workflow DNA</h2>
-              <div className="indicator" title="Workflow DNA Active"></div>
-            </div>
-            <p className="card-text">
-              Deterministic extraction of invariant steps, variable parameters, optional steps, and precedence.
-            </p>
-            <div className="card-meta">Phase 4: Invariants, Variables & Evidence</div>
-          </div>
+          <DiscoveryView
+            candidates={candidates}
+            isLoading={isDiscoveryLoading}
+            error={discoveryError}
+            onRefresh={fetchDiscoveryCandidates}
+            selectedCandidateId={selectedCandidateId}
+            onSelectCandidate={setSelectedCandidateId}
+            onExtractDNA={handleExtractDNA}
+            isExtractingDNA={isExtractingDNA}
+            dnaItems={dnaItems}
+            onNavigateToSemantic={handleNavigateToSemantic}
+            onNavigateToDNA={handleNavigateToDNA}
+          />
 
-          <div className="status-card">
-            <div className="card-header">
-              <h2 className="card-title">Semantic Understanding</h2>
-              <div className="indicator" title="Semantic Intent Active"></div>
-            </div>
-            <p className="card-text">
-              Evidence-grounded LLM translation of structural DNA into validated semantic workflow intent.
-            </p>
-            <div className="card-meta">Phase 5: AI Intent Translation</div>
-          </div>
-
-          <div className="status-card">
-            <div className="card-header">
-              <h2 className="card-title">Canonical Specification</h2>
-              <div className="indicator" title="Governance & Approval Active"></div>
-            </div>
-            <p className="card-text">
-              Traceable canonical contract, deterministic parameter binding, risk classification, and user approval.
-            </p>
-            <div className="card-meta">Phase 6: Formal Contract & Human Governance</div>
-          </div>
+          <DNAView
+            dnaItems={dnaItems}
+            isLoading={isDnaLoading || isExtractingDNA}
+            error={dnaError}
+            onRefresh={fetchWorkflowDNA}
+            selectedDnaId={selectedDnaId}
+            onSelectDnaId={setSelectedDnaId}
+            onNavigateToSemantic={handleNavigateToSemantic}
+          />
         </section>
 
-        {/* Phase 7 & 8 Execution Planning & Controlled Local Execution View */}
-        <section
-          style={{
-            backgroundColor: '#0f172a',
-            borderRadius: '12px',
-            border: '1px solid #1e293b',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span
-                  style={{
-                    backgroundColor: '#16a34a',
-                    color: '#fff',
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Phase 8 Active
-                </span>
-                <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '20px' }}>
-                  Execution Engine & Controlled Local Execution
-                </h2>
+        {/* ================================================================= */}
+        {/* STAGE 3: UNDERSTAND — Gemini Semantic Interpretation              */}
+        {/* ================================================================= */}
+        <section id="stage-understand" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stage 3</span>
+              <span className="stage-section-name">UNDERSTAND — Semantic Intent Translation</span>
+            </div>
+            <span className="stage-section-hint">Evidence-grounded translation: Ground Truth vs Gemini Intent</span>
+          </div>
+
+          <SemanticView
+            dnaItems={dnaItems}
+            interpretations={interpretations}
+            isLoading={interpretingDnaId !== null}
+            interpretingDnaId={interpretingDnaId}
+            onInterpret={handleInterpret}
+            selectedDnaId={selectedDnaId}
+            onSelectDnaId={setSelectedDnaId}
+            onSpecificationCreated={async (newSpec) => {
+              await fetchSpecifications();
+              setSelectedSpecId(newSpec.workflow_id);
+              handleSelectStage('approve');
+            }}
+            onNavigateToApprove={(workflowId) => {
+              setSelectedSpecId(workflowId);
+              handleSelectStage('approve');
+            }}
+            existingSpecifications={specifications}
+          />
+        </section>
+
+        {/* ================================================================= */}
+        {/* STAGE 4: APPROVE — Canonical Specification & Governance           */}
+        {/* ================================================================= */}
+        <section id="stage-approve" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stage 4</span>
+              <span className="stage-section-name">APPROVE — Canonical Specification & Governance</span>
+            </div>
+            <span className="stage-section-hint">Deterministic contract, risk classification & human approval gate</span>
+          </div>
+
+          <CanonicalSpecView
+            specifications={specifications}
+            semanticWorkflows={validSemanticWorkflows}
+            isLoading={isSpecLoading}
+            onGenerateSpec={handleGenerateSpec}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            onUpdateParameters={handleUpdateParameters}
+            onRefresh={fetchSpecifications}
+            selectedWorkflowId={selectedSpecId}
+            onSelectWorkflowId={setSelectedSpecId}
+          />
+        </section>
+
+        {/* ================================================================= */}
+        {/* STAGES 5, 6, 7: DRY RUN, EXECUTE, VERIFY                          */}
+        {/* ================================================================= */}
+        <section id="stage-execution" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stages 5–7</span>
+              <span className="stage-section-name">DRY RUN, EXECUTE & VERIFY — Safe Execution Engine</span>
+            </div>
+            <span className="stage-section-hint">Provably side-effect free dry runs, controlled sandbox / Gmail API, post-execution verification</span>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#0f172a',
+              borderRadius: '12px',
+              border: '1px solid #1e293b',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      backgroundColor: '#16a34a',
+                      color: '#fff',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Guarded Execution Engine
+                  </span>
+                  <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '20px' }}>
+                    Multi-Strategy Execution & Verification
+                  </h2>
+                </div>
+                <p style={{ margin: '6px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>
+                  Converts approved canonical specifications into deterministic plans. Dry run guarantees 0 side-effects. Live execution strictly limited to Controlled Local sandbox and Read-Only Gmail API search.
+                </p>
               </div>
-              <p style={{ margin: '6px 0 0 0', color: '#94a3b8', fontSize: '14px' }}>
-                Converts approved canonical specifications into deterministic execution plans, simulates dry runs safely, and executes allowlisted local actions inside a sandbox.
-              </p>
-            </div>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              {specifications.filter((s) => s.approval_state?.state === 'approved').length > 0 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                {approvedSpecs.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      id="approved-spec-select"
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#1e293b',
+                        color: '#f8fafc',
+                        borderRadius: '6px',
+                        border: '1px solid #334155',
+                        fontSize: '13px',
+                      }}
+                      defaultValue=""
+                      disabled={isPlanLoading}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleCreateExecutionPlan(e.target.value);
+                          e.target.value = '';
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Plan from approved workflow...</option>
+                      {approvedSpecs.map((s) => (
+                        <option key={s.workflow_id} value={s.workflow_id}>
+                          {s.title} ({s.workflow_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {executionPlans.length > 0 && (
                   <select
-                    id="approved-spec-select"
+                    value={selectedPlanId || ''}
+                    onChange={(e) => setSelectedPlanId(e.target.value)}
                     style={{
                       padding: '8px 12px',
                       backgroundColor: '#1e293b',
@@ -392,132 +868,76 @@ export const App: React.FC = () => {
                       border: '1px solid #334155',
                       fontSize: '13px',
                     }}
-                    defaultValue=""
-                    disabled={isPlanLoading}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleCreateExecutionPlan(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
                   >
-                    <option value="" disabled>Plan from approved workflow...</option>
-                    {specifications
-                      .filter((s) => s.approval_state?.state === 'approved')
-                      .map((s) => (
-                        <option key={s.workflow_id} value={s.workflow_id}>
-                          {s.title} ({s.workflow_id})
-                        </option>
-                      ))}
+                    {executionPlans.map((p) => (
+                      <option key={p.execution_plan_id} value={p.execution_plan_id}>
+                        Plan: {p.execution_plan_id} ({p.dry_run_status})
+                      </option>
+                    ))}
                   </select>
-                </div>
-              )}
-
-              {executionPlans.length > 0 && (
-                <select
-                  value={selectedPlanId || ''}
-                  onChange={(e) => setSelectedPlanId(e.target.value)}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: '#1e293b',
-                    color: '#f8fafc',
-                    borderRadius: '6px',
-                    border: '1px solid #334155',
-                    fontSize: '13px',
-                  }}
-                >
-                  {executionPlans.map((p) => (
-                    <option key={p.execution_plan_id} value={p.execution_plan_id}>
-                      Plan: {p.execution_plan_id} ({p.dry_run_status})
-                    </option>
-                  ))}
-                </select>
-              )}
+                )}
+              </div>
             </div>
+
+            {selectedExecutionPlan ? (
+              <ExecutionPlanView
+                plan={selectedExecutionPlan}
+                onDryRunComplete={(updated) => {
+                  setExecutionPlans((prev) =>
+                    prev.map((p) => (p.execution_plan_id === updated.execution_plan_id ? updated : p))
+                  );
+                }}
+                apiBaseUrl={API_BASE}
+                externalActiveTab={executionPlanTab}
+                onExecutionComplete={(record) => {
+                  setLastExecutionRecord(record);
+                  setActiveStage('verify');
+                }}
+                onVerificationComplete={(result) => {
+                  setLastVerificationResult(result);
+                  setActiveStage('learn');
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  padding: '30px',
+                  textAlign: 'center',
+                  backgroundColor: '#1e293b',
+                  borderRadius: '8px',
+                  color: '#94a3b8',
+                }}
+              >
+                <p style={{ margin: 0 }}>No Execution Plans created yet.</p>
+                <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>
+                  Approve a Canonical Specification in Stage 4, then select it from the dropdown above to generate an execution plan.
+                </p>
+              </div>
+            )}
           </div>
-
-          {selectedExecutionPlan ? (
-            <ExecutionPlanView
-              plan={selectedExecutionPlan}
-              onDryRunComplete={(updated) => {
-                setExecutionPlans((prev) =>
-                  prev.map((p) => (p.execution_plan_id === updated.execution_plan_id ? updated : p))
-                );
-              }}
-              apiBaseUrl={API_BASE}
-            />
-          ) : (
-            <div
-              style={{
-                padding: '30px',
-                textAlign: 'center',
-                backgroundColor: '#1e293b',
-                borderRadius: '8px',
-                color: '#94a3b8',
-              }}
-            >
-              <p style={{ margin: 0 }}>No Execution Plans created yet.</p>
-              <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>
-                Approve a Canonical Specification below, then select it from the dropdown to generate an execution plan.
-              </p>
-            </div>
-          )}
         </section>
 
-        {/* Phase 11 Workflow Learning & Reliability Intelligence View */}
-        <WorkflowLearningView
-          specifications={specifications}
-          apiBaseUrl={API_BASE}
-        />
+        {/* ================================================================= */}
+        {/* STAGE 8: LEARN — Workflow Learning & Reliability Intelligence    */}
+        {/* ================================================================= */}
+        <section id="stage-learn" className="stage-section-wrapper">
+          <div className="stage-section-banner">
+            <div className="stage-section-banner-title">
+              <span className="stage-section-number">Stage 8</span>
+              <span className="stage-section-name">LEARN — Workflow Learning & Reliability Intelligence</span>
+            </div>
+            <span className="stage-section-hint">Deterministic aggregation of execution audits and verification evidence into reliability profiles</span>
+          </div>
 
-        {/* Phase 6 Canonical Workflow Specification & User Approval View */}
-        <CanonicalSpecView
-          specifications={specifications}
-          semanticWorkflows={validSemanticWorkflows}
-          isLoading={isSpecLoading}
-          onGenerateSpec={handleGenerateSpec}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onUpdateParameters={handleUpdateParameters}
-          onRefresh={fetchSpecifications}
-        />
-
-        {/* Phase 5 Semantic Understanding & Intent Translation View */}
-        <SemanticView
-          dnaItems={dnaItems}
-          interpretations={interpretations}
-          isLoading={interpretingDnaId !== null}
-          interpretingDnaId={interpretingDnaId}
-          onInterpret={handleInterpret}
-        />
-
-        {/* Phase 4 Workflow DNA View */}
-        <DNAView
-          dnaItems={dnaItems}
-          isLoading={isDnaLoading}
-          error={dnaError}
-          onRefresh={fetchWorkflowDNA}
-        />
-
-        {/* Phase 3 Discovered Workflow Candidates View */}
-        <DiscoveryView
-          candidates={candidates}
-          isLoading={isDiscoveryLoading}
-          error={discoveryError}
-          onRefresh={fetchDiscoveryCandidates}
-        />
-
-        {/* Live Event Stream View */}
-        <EventList
-          events={events}
-          isLoading={isEventsLoading}
-          error={eventsError}
-          onRefresh={fetchEvents}
-        />
+          <WorkflowLearningView
+            specifications={specifications}
+            apiBaseUrl={API_BASE}
+          />
+        </section>
       </main>
 
       <footer className="footer">
-        WorkFlowOS &mdash; Phase 6 Canonical Workflow Specification, Risk Analysis & User Approval
+        WorkFlowOS &mdash; Phase 13.1 Unified Workflow Pipeline UI Shell &bull; Controlled Local Sandbox &amp; Read-Only Gmail API
       </footer>
     </div>
   );

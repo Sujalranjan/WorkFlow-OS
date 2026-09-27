@@ -6,7 +6,7 @@ Orchestrates deterministic post-execution verification:
 - Enforces sandbox isolation (zero external requests, zero arbitrary filesystem inspection)
 - NO LLM involvement: 100% deterministic verification rules
 - Aggregates step-level checks into workflow-level verification status
-- Persists verification runs, atomic checks, and tamper-proof evidence in SQLite
+- Persists verification runs, atomic checks, and cryptographic integrity evidence in SQLite
 - Updates execution audit record with verification outcome
 """
 
@@ -121,13 +121,22 @@ class VerificationEngine:
             # Case B: Step represents an external application (Gmail, CRM, Slack)
             app_lower = step.application.lower()
             if any(ext in app_lower for ext in ["gmail", "crm", "salesforce", "hubspot", "slack", "teams"]):
-                # Phase 12 enables read-only GmailApiExecutor search_email verification.
-                # Other external services or Gmail mutations remain prohibited.
-                is_gmail_search = ("gmail" in app_lower) and (
-                    step.action.lower().strip().replace(" ", "_") == "search_email"
+                # GmailApiExecutor (Phase 12/15A), CrmApiExecutor (Phase 15B), and SlackApiExecutor (Phase 15D) are supported.
+                # Teams or Gmail mutations remain prohibited.
+                act_norm = step.action.lower().strip().replace(" ", "_")
+                is_gmail_allowed = ("gmail" in app_lower) and (
+                    act_norm in ("search_email", "download_attachment", "download_email_attachment")
                     or (step_res and step_res.executor_name == "GmailApiExecutor")
                 )
-                if not is_gmail_search:
+                is_crm_allowed = any(c in app_lower for c in ["crm", "hubspot", "salesforce"]) and (
+                    act_norm in ("find_customer", "search_customer", "update_customer_record", "update_customer", "get_customer")
+                    or (step_res and step_res.executor_name == "CrmApiExecutor")
+                )
+                is_slack_allowed = ("slack" in app_lower) and (
+                    act_norm == "send_notification"
+                    or (step_res and step_res.executor_name == "SlackApiExecutor")
+                )
+                if not (is_gmail_allowed or is_crm_allowed or is_slack_allowed):
                     all_checks.append(
                         VerificationCheck(
                             execution_id=execution_id,
@@ -137,9 +146,9 @@ class VerificationEngine:
                             strategy_type=VerificationStrategyType.NOT_APPLICABLE,
                             target=step.application,
                             expected_state="External state modification",
-                            actual_state="External mutation prohibited in Phase 12",
+                            actual_state="External mutation prohibited",
                             status=VerificationStatus.NOT_APPLICABLE,
-                            reason="External service verification (Gmail mutation/CRM/Slack) is explicitly prohibited",
+                            reason="External service verification (e.g. Teams, Gmail mutation) is explicitly prohibited",
                         )
                     )
                     continue

@@ -5,7 +5,7 @@ Deterministic post-execution verification for sandbox filesystem artifacts:
 - Non-empty file validation
 - Directory existence
 - Resource absence (e.g. temporary file cleanup)
-- Computes SHA256 hash and metadata as tamper-proof evidence
+- Computes SHA256 hash and metadata as cryptographic integrity evidence
 - Strict sandbox boundary enforcement (no path traversal, no reading outside sandbox)
 """
 
@@ -40,6 +40,10 @@ class FileSystemVerificationStrategy(BaseVerificationStrategy):
         """Supports filesystem actions and steps producing or validating file artifacts."""
         app_lower = step.application.lower()
         action_lower = step.action.lower()
+
+        # External services (Gmail, Slack, CRM) are verified by dedicated verifiers
+        if any(ext in app_lower for ext in ["gmail", "google mail", "crm", "salesforce", "hubspot", "slack", "teams"]):
+            return False
 
         # Target must be local filesystem
         if any(f in app_lower for f in ["file system", "filesystem", "file", "local", "folder"]):

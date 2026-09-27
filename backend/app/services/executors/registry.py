@@ -10,7 +10,9 @@ from app.models.execution_plan import ExecutionStrategy, PlannedStep
 from app.models.strategy import ExecutionStrategyType, ExecutorCapability
 from app.services.executors.base import BaseExecutor
 from app.services.executors.controlled_local import ControlledLocalExecutor
+from app.services.executors.crm_executor import CrmApiExecutor
 from app.services.executors.gmail_executor import GmailApiExecutor
+from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.executors.unimplemented import (
     AccessibilityUiExecutor,
     ApiIntegrationExecutor,
@@ -28,10 +30,16 @@ class ExecutorRegistry:
         # 1. Register Phase 8 implemented executor (local filesystem sandbox)
         self.register(ControlledLocalExecutor())
 
-        # 2. Register Phase 12 implemented external executor (read-only Gmail search)
+        # 2. Register Phase 12 & 15A implemented external executor (Gmail API)
         self.register(GmailApiExecutor())
 
-        # 3. Register Phase 10 architecturally represented (unimplemented) executors
+        # 3. Register Phase 15B implemented external executor (CRM API)
+        self.register(CrmApiExecutor())
+
+        # 4. Register Phase 15D implemented external executor (Slack API)
+        self.register(SlackApiExecutor())
+
+        # 5. Register Phase 10 architecturally represented (unimplemented) executors
         self.register(ApiIntegrationExecutor())
         self.register(ApplicationIntegrationExecutor())
         self.register(AccessibilityUiExecutor())
@@ -160,3 +168,8 @@ class ExecutorRegistry:
     def list_implemented_executors(self) -> List[str]:
         """Lists names of only currently implemented executors."""
         return [e.name for e in self._executors.values() if e.capability.implemented]
+
+    def get_implemented_executors(self) -> List[str]:
+        """Alias for list_implemented_executors."""
+        return self.list_implemented_executors()
+

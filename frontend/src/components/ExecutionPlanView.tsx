@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ExecutionPlan,
   DryRunResult,
@@ -10,12 +10,18 @@ interface ExecutionPlanViewProps {
   plan: ExecutionPlan;
   onDryRunComplete: (updatedPlan: ExecutionPlan) => void;
   apiBaseUrl: string;
+  externalActiveTab?: 'plan' | 'parameters' | 'strategies' | 'state_changes' | 'dry_run' | 'live_execution' | 'verification';
+  onExecutionComplete?: (record: ExecutionAuditRecord) => void;
+  onVerificationComplete?: (result: VerificationResult) => void;
 }
 
 export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
   plan,
   onDryRunComplete,
   apiBaseUrl,
+  externalActiveTab,
+  onExecutionComplete,
+  onVerificationComplete,
 }) => {
   const [isRunningDryRun, setIsRunningDryRun] = useState(false);
   const [dryRunError, setDryRunError] = useState<string | null>(null);
@@ -33,6 +39,12 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
   const [activeTab, setActiveTab] = useState<
     'plan' | 'parameters' | 'strategies' | 'state_changes' | 'dry_run' | 'live_execution' | 'verification'
   >('plan');
+
+  useEffect(() => {
+    if (externalActiveTab) {
+      setActiveTab(externalActiveTab);
+    }
+  }, [externalActiveTab]);
 
   const handleRunDryRun = async () => {
     setIsRunningDryRun(true);
@@ -86,6 +98,7 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
       }
       const auditRecord: ExecutionAuditRecord = await response.json();
       setExecutionResult(auditRecord);
+      onExecutionComplete?.(auditRecord);
       setActiveTab('live_execution');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -114,6 +127,7 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
       }
       const result: VerificationResult = await response.json();
       setVerificationResult(result);
+      onVerificationComplete?.(result);
       setActiveTab('verification');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -653,7 +667,7 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
             <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
               WorkFlowOS deterministically selects executor strategies per step based on capabilities, risk, and approval state.
               <strong style={{ color: '#f8fafc' }}> Known strategy does NOT mean implemented strategy. </strong>
-              Phase 12 implements <code>CONTROLLED_LOCAL</code> and read-only <code>API_INTEGRATION</code> (<code>GmailApiExecutor</code> for search_email); all mutating actions and unsupported external services are safely blocked.
+              Phase 12 & 15A implement <code>CONTROLLED_LOCAL</code> and read-only <code>API_INTEGRATION</code> (<code>GmailApiExecutor</code> for search_email and download_attachment); all mutating actions and unsupported external services are safely blocked.
             </div>
           </div>
 
@@ -1087,47 +1101,71 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '11px', color: '#5eead4', fontWeight: 600, textTransform: 'uppercase' }}>
-                            Gmail API Integration (Read-Only Search)
+                            {st.output?.operation === 'download_attachment'
+                              ? 'Gmail API Integration (Download Attachment)'
+                              : 'Gmail API Integration (Read-Only Search)'}
                           </span>
                           <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                            Zero Mutation • Narrow Scope (gmail.readonly)
+                            {st.output?.operation === 'download_attachment'
+                              ? 'Controlled Sandbox Confinement • Scope (gmail.readonly)'
+                              : 'Zero Mutation • Narrow Scope (gmail.readonly)'}
                           </span>
                         </div>
-                        {st.output?.query && (
-                          <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                            <strong>Approved Query:</strong> <code>{st.output.query}</code> • <strong>Matches Found:</strong> {st.output.total_found ?? 0}
-                          </div>
-                        )}
-                        {st.output?.messages && Array.isArray(st.output.messages) && st.output.messages.length > 0 && (
-                          <div style={{ marginTop: '4px' }}>
-                            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
-                              Normalized Message Summaries ({Math.min(st.output.messages.length, 5)} of {st.output.total_found}):
+                        {st.output?.operation === 'download_attachment' ? (
+                          <div style={{ fontSize: '12px', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div>
+                              <strong>Downloaded File:</strong> <code style={{ color: '#38bdf8' }}>{st.output.filename}</code> • <strong>Size:</strong> {st.output.size_bytes} bytes
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              {st.output.messages.slice(0, 5).map((m: any, mIdx: number) => (
-                                <div
-                                  key={m.message_id || mIdx}
-                                  style={{
-                                    backgroundColor: '#1e293b',
-                                    padding: '6px 8px',
-                                    borderRadius: '4px',
-                                    fontSize: '11px',
-                                    color: '#cbd5e1',
-                                  }}
-                                >
-                                  <div>
-                                    <strong style={{ color: '#f8fafc' }}>{m.subject || '(No Subject)'}</strong>
-                                    <span style={{ color: '#94a3b8', marginLeft: '6px' }}>from: {m.sender || 'Unknown'}</span>
-                                  </div>
-                                  {m.snippet && (
-                                    <div style={{ color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
-                                      "{m.snippet}"
-                                    </div>
-                                  )}
+                            {st.output.saved_path && (
+                              <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                <strong>Destination:</strong> <code>{st.output.saved_path}</code>
+                              </div>
+                            )}
+                            {st.output.sha256 && (
+                              <div style={{ fontSize: '11px', color: '#a7f3d0' }}>
+                                <strong>Cryptographic Evidence (SHA-256):</strong> <code>{st.output.sha256}</code>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            {st.output?.query && (
+                              <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                                <strong>Approved Query:</strong> <code>{st.output.query}</code> • <strong>Matches Found:</strong> {st.output.total_found ?? 0}
+                              </div>
+                            )}
+                            {st.output?.messages && Array.isArray(st.output.messages) && st.output.messages.length > 0 && (
+                              <div style={{ marginTop: '4px' }}>
+                                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                                  Normalized Message Summaries ({Math.min(st.output.messages.length, 5)} of {st.output.total_found}):
                                 </div>
-                              ))}
-                            </div>
-                          </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  {st.output.messages.slice(0, 5).map((m: any, mIdx: number) => (
+                                    <div
+                                      key={m.message_id || mIdx}
+                                      style={{
+                                        backgroundColor: '#1e293b',
+                                        padding: '6px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '11px',
+                                        color: '#cbd5e1',
+                                      }}
+                                    >
+                                      <div>
+                                        <strong style={{ color: '#f8fafc' }}>{m.subject || '(No Subject)'}</strong>
+                                        <span style={{ color: '#94a3b8', marginLeft: '6px' }}>from: {m.sender || 'Unknown'}</span>
+                                      </div>
+                                      {m.snippet && (
+                                        <div style={{ color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
+                                          "{m.snippet}"
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

@@ -23,7 +23,7 @@ def run_phase3_demo() -> None:
     print("     WorkFlowOS Phase 3: Workflow Segmentation & Discovery        ")
     print("==================================================================")
     print(f"Backend Target URL : {backend_url}")
-    print("Algorithm          : Deterministic Temporal Segmentation + LCS Sequence Clustering")
+    print("Algorithm          : Deterministic Temporal Segmentation + Python SequenceMatcher Similarity")
     print("AI / LLM Calls     : NONE (100% Deterministic & Explainable)")
     print("==================================================================\n")
 
