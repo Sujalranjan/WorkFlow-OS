@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WorkFlowOS Activity Observer</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; min-width: 360px; }
+    label { display: block; margin: 10px 0 4px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; }
+    button { margin-top: 12px; padding: 6px 14px; }
+    #saved { margin-left: 8px; color: #2a7a3b; }
+  </style>
+</head>
+<body>
+  <label for="backendUrl">WorkFlowOS backend URL</label>
+  <input id="backendUrl" type="url" placeholder="http://127.0.0.1:8000">
+  <label for="crmOrigins">Demo CRM origins (comma separated)</label>
+  <input id="crmOrigins" type="text" placeholder="http://127.0.0.1:8001">
+  <button id="save">Save</button><span id="saved"></span>
+  <script src="options.js"></script>
+</body>
+</html>

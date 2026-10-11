@@ -114,13 +114,13 @@ def mock_temp_repos():
     """Provides isolated SQLite/in-memory repositories in a temporary directory."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = os.path.join(tmp_dir, "test_p10.db")
-        os.environ["WORKFLOWOS_DB_PATH"] = db_path
+        saved_sandbox = os.environ.get("WORKFLOWOS_SANDBOX_DIR")
         os.environ["WORKFLOWOS_SANDBOX_DIR"] = os.path.join(tmp_dir, "sandboxes")
 
-        canonical_repo = CanonicalWorkflowRepository()
-        plan_repo = ExecutionPlanRepository()
-        exec_repo = ExecutionRepository()
-        verif_repo = VerificationRepository()
+        canonical_repo = CanonicalWorkflowRepository(db_path=db_path)
+        plan_repo = ExecutionPlanRepository(db_path=db_path)
+        exec_repo = ExecutionRepository(db_path=db_path)
+        verif_repo = VerificationRepository(db_path=db_path)
         registry = ExecutorRegistry()
         policy = ExecutionPolicyEngine(registry=registry)
         selector = StrategySelector(registry=registry, policy_engine=policy)
@@ -151,6 +151,11 @@ def mock_temp_repos():
             "engine": engine,
             "verif_engine": verif_engine,
         }
+
+        if saved_sandbox is None:
+            os.environ.pop("WORKFLOWOS_SANDBOX_DIR", None)
+        else:
+            os.environ["WORKFLOWOS_SANDBOX_DIR"] = saved_sandbox
 
 
 # =========================================================================

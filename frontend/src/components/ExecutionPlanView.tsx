@@ -13,6 +13,8 @@ interface ExecutionPlanViewProps {
   externalActiveTab?: 'plan' | 'parameters' | 'strategies' | 'state_changes' | 'dry_run' | 'live_execution' | 'verification';
   onExecutionComplete?: (record: ExecutionAuditRecord) => void;
   onVerificationComplete?: (result: VerificationResult) => void;
+  activeGmailQuery?: string;
+  onReplanWithQuery?: (newQuery: string) => Promise<void>;
 }
 
 export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
@@ -22,9 +24,31 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
   externalActiveTab,
   onExecutionComplete,
   onVerificationComplete,
+  activeGmailQuery,
+  onReplanWithQuery,
 }) => {
   const [isRunningDryRun, setIsRunningDryRun] = useState(false);
   const [dryRunError, setDryRunError] = useState<string | null>(null);
+
+  // Phase 19: Dynamic Gmail Query State
+  const resolvedSearchQuery =
+    plan.resolved_parameters.find(
+      (p) => p.semantic_name === 'search_query' || p.source_parameter === 'search_query'
+    )?.runtime_value || activeGmailQuery || 'has:attachment';
+
+  const [queryInputValue, setQueryInputValue] = useState<string>(resolvedSearchQuery);
+  const [isUpdatingQuery, setIsUpdatingQuery] = useState(false);
+  const [showOtherCandidates, setShowOtherCandidates] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setQueryInputValue(resolvedSearchQuery);
+  }, [resolvedSearchQuery]);
+
+  const formatShortId = (id?: string) => {
+    if (!id) return 'N/A';
+    if (id.length <= 16) return id;
+    return `${id.slice(0, 8)}...${id.slice(-4)}`;
+  };
 
   // Phase 8 Controlled Live Execution State
   const [isExecutingLive, setIsExecutingLive] = useState(false);
@@ -283,6 +307,133 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
         </div>
       </div>
 
+      {/* Phase 19: Active Gmail Query & Live Demo Query Banner */}
+      {(plan.planned_steps.some((s) => s.application.toLowerCase().includes('gmail')) ||
+        plan.resolved_parameters.some((p) => p.semantic_name === 'search_query')) && (
+        <div
+          style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #0284c7',
+            borderRadius: '8px',
+            padding: '14px 18px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '16px' }}>✉️</span>
+              <strong style={{ color: '#f8fafc', fontSize: '14px' }}>
+                Active Gmail Search Query (Track C Live Demo)
+              </strong>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  backgroundColor:
+                    plan.resolved_parameters.find((p) => p.semantic_name === 'search_query')?.resolution_status === 'resolved'
+                      ? '#065f46'
+                      : '#1e3a8a',
+                  color: '#fff',
+                }}
+              >
+                Status: {plan.resolved_parameters.find((p) => p.semantic_name === 'search_query')?.resolution_status?.toUpperCase() || 'DEFAULT_SAMPLE'}
+              </span>
+            </div>
+
+            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Selection Precedence: <code>EXACT_SUBJECT_MATCH</code> → <code>EXACT_SENDER_MATCH</code> → <code>UNIQUE_QUERY_MATCH</code> → <code>REVERSE_CHRONOLOGICAL_FIRST</code>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={queryInputValue}
+              onChange={(e) => setQueryInputValue(e.target.value)}
+              placeholder="e.g. subject:&quot;Customer Replacement Request - DEMO&quot; has:attachment"
+              style={{
+                flex: 1,
+                minWidth: '320px',
+                padding: '8px 12px',
+                backgroundColor: '#1e293b',
+                border: '1px solid #475569',
+                borderRadius: '6px',
+                color: '#f8fafc',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+              }}
+              disabled={isUpdatingQuery || isExecutingLive}
+            />
+
+            {onReplanWithQuery && (
+              <button
+                type="button"
+                disabled={isUpdatingQuery || isExecutingLive || !queryInputValue.trim()}
+                onClick={async () => {
+                  setIsUpdatingQuery(true);
+                  try {
+                    await onReplanWithQuery(queryInputValue.trim());
+                  } finally {
+                    setIsUpdatingQuery(false);
+                  }
+                }}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#0284c7',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: isUpdatingQuery || isExecutingLive ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isUpdatingQuery ? 'Updating Plan...' : 'Re-plan with Query'}
+              </button>
+            )}
+          </div>
+
+          {/* Preset Chips */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Quick Presets:</span>
+            <button
+              type="button"
+              onClick={() => setQueryInputValue('has:attachment')}
+              style={{
+                padding: '3px 8px',
+                backgroundColor: queryInputValue === 'has:attachment' ? '#0369a1' : '#1e293b',
+                color: '#e2e8f0',
+                border: '1px solid #334155',
+                borderRadius: '4px',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              Default: has:attachment
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueryInputValue('subject:"Customer Replacement Request - DEMO" has:attachment')}
+              style={{
+                padding: '3px 8px',
+                backgroundColor: queryInputValue.includes('DEMO') ? '#0369a1' : '#1e293b',
+                color: '#e2e8f0',
+                border: '1px solid #334155',
+                borderRadius: '4px',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              Live Demo: subject:"Customer Replacement Request - DEMO" has:attachment
+            </button>
+          </div>
+        </div>
+      )}
+
       {dryRunError && (
         <div
           style={{
@@ -519,6 +670,20 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                   >
                     Target: {step.application}
                   </span>
+                  {step.catalog_action && (
+                    <span
+                      title="Routed by the ActionCatalog to exactly one executor"
+                      style={{
+                        fontSize: '11px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: '#14532d',
+                        color: '#bbf7d0',
+                      }}
+                    >
+                      {step.catalog_action}
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -594,6 +759,16 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
               </div>
             </div>
           ))}
+          {plan.excluded_steps && plan.excluded_steps.length > 0 && (
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+              Observed but not executed:{' '}
+              {plan.excluded_steps.map((s) => (
+                <code key={s.canonical_step_id} title={s.reason} style={{ marginRight: '8px' }}>
+                  {s.source_dna_step_key}
+                </code>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -631,6 +806,8 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                             ? '#065f46'
                             : param.resolution_status === 'default_sample'
                             ? '#854d0e'
+                            : param.resolution_status === 'from_upstream'
+                            ? '#1e40af'
                             : '#991b1b',
                         color: '#fff',
                       }}
@@ -1131,38 +1308,144 @@ export const ExecutionPlanView: React.FC<ExecutionPlanViewProps> = ({
                           <>
                             {st.output?.query && (
                               <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                                <strong>Approved Query:</strong> <code>{st.output.query}</code> • <strong>Matches Found:</strong> {st.output.total_found ?? 0}
+                                <strong>Approved Query:</strong> <code style={{ color: '#38bdf8' }}>{st.output.query}</code> • <strong>Matches Found:</strong> {st.output.total_found ?? 0}
                               </div>
                             )}
-                            {st.output?.messages && Array.isArray(st.output.messages) && st.output.messages.length > 0 && (
-                              <div style={{ marginTop: '4px' }}>
-                                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
-                                  Normalized Message Summaries ({Math.min(st.output.messages.length, 5)} of {st.output.total_found}):
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  {st.output.messages.slice(0, 5).map((m: any, mIdx: number) => (
-                                    <div
-                                      key={m.message_id || mIdx}
+
+                            {/* Phase 19: Deterministically Selected Email Display */}
+                            {st.output?.selected_message ? (
+                              <div
+                                style={{
+                                  backgroundColor: '#0c4a6e',
+                                  border: '1px solid #0284c7',
+                                  borderRadius: '6px',
+                                  padding: '12px 14px',
+                                  marginTop: '8px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>
+                                      🎯 Selected Email
+                                    </span>
+                                    <span
                                       style={{
-                                        backgroundColor: '#1e293b',
-                                        padding: '6px 8px',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        padding: '2px 6px',
                                         borderRadius: '4px',
-                                        fontSize: '11px',
-                                        color: '#cbd5e1',
+                                        backgroundColor: '#0369a1',
+                                        color: '#e0f2fe',
+                                        textTransform: 'uppercase',
                                       }}
                                     >
-                                      <div>
-                                        <strong style={{ color: '#f8fafc' }}>{m.subject || '(No Subject)'}</strong>
-                                        <span style={{ color: '#94a3b8', marginLeft: '6px' }}>from: {m.sender || 'Unknown'}</span>
-                                      </div>
-                                      {m.snippet && (
-                                        <div style={{ color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
-                                          "{m.snippet}"
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                      {st.output.selection_rule || 'DETERMINISTIC_MATCH'}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: '#93c5fd' }}>
+                                    Message ID: <code style={{ color: '#bae6fd' }} title={st.output.selected_message_id || st.output.selected_message?.message_id}>{formatShortId(st.output.selected_message_id || st.output.selected_message?.message_id)}</code>
+                                  </span>
                                 </div>
+
+                                <div style={{ fontSize: '13px', color: '#f0f9ff' }}>
+                                  <strong>Subject:</strong> <span style={{ fontWeight: 600 }}>{st.output.selected_message.subject || '(No Subject)'}</span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#bae6fd' }}>
+                                  <strong>Sender:</strong> {st.output.selected_message.sender || 'Unknown'}
+                                </div>
+                                {st.output.selected_message.snippet && (
+                                  <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic', backgroundColor: '#082f49', padding: '6px 8px', borderRadius: '4px' }}>
+                                    "{st.output.selected_message.snippet}"
+                                  </div>
+                                )}
+                                {st.output.selection_reason && (
+                                  <div style={{ fontSize: '11px', color: '#7dd3fc', marginTop: '2px' }}>
+                                    <strong>Selection Rule Rationale:</strong> {st.output.selection_reason}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '11px', color: '#86efac', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>✓</span>
+                                  <span>Message ID deterministically propagated to Step 2 (download_attachment).</span>
+                                </div>
+                              </div>
+                            ) : st.output?.total_found === 0 ? (
+                              <div
+                                style={{
+                                  backgroundColor: '#450a0a',
+                                  border: '1px solid #dc2626',
+                                  borderRadius: '6px',
+                                  padding: '10px 12px',
+                                  marginTop: '8px',
+                                  color: '#fca5a5',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                ⚠️ <strong>No Matching Emails Found:</strong> Query <code>{st.output.query}</code> matched 0 emails in the mailbox. Step 2 (download_attachment) safely blocked without mutating external state.
+                              </div>
+                            ) : null}
+
+                            {/* Collapsible Other Candidate Messages */}
+                            {st.output?.messages && Array.isArray(st.output.messages) && st.output.messages.length > 1 && (
+                              <div style={{ marginTop: '8px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowOtherCandidates((prev) => ({
+                                      ...prev,
+                                      [st.execution_step_id]: !prev[st.execution_step_id],
+                                    }))
+                                  }
+                                  style={{
+                                    backgroundColor: 'transparent',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    padding: '4px 0',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <span>{showOtherCandidates[st.execution_step_id] ? '▼' : '►'}</span>
+                                  <span>
+                                    {showOtherCandidates[st.execution_step_id] ? 'Hide' : 'Show'} other mailbox candidates ({st.output.messages.length - 1} unselected)
+                                  </span>
+                                </button>
+
+                                {showOtherCandidates[st.execution_step_id] && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                                    {st.output.messages
+                                      .filter((m: any) => m.message_id !== (st.output.selected_message_id || st.output.selected_message?.message_id))
+                                      .slice(0, 5)
+                                      .map((m: any, mIdx: number) => (
+                                        <div
+                                          key={m.message_id || mIdx}
+                                          style={{
+                                            backgroundColor: '#1e293b',
+                                            padding: '6px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '11px',
+                                            color: '#cbd5e1',
+                                          }}
+                                        >
+                                          <div>
+                                            <strong style={{ color: '#94a3b8' }}>{m.subject || '(No Subject)'}</strong>
+                                            <span style={{ color: '#64748b', marginLeft: '6px' }}>from: {m.sender || 'Unknown'}</span>
+                                            <span style={{ color: '#64748b', marginLeft: '6px' }}>id: {formatShortId(m.message_id)}</span>
+                                          </div>
+                                          {m.snippet && (
+                                            <div style={{ color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+                                              "{m.snippet}"
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </>

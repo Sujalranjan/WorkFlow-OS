@@ -53,7 +53,11 @@ def build_phase16_canonical_spec(
     approval_state: ApprovalState = ApprovalState.REQUIRES_REVIEW,
     reviewed_by: Optional[str] = None,
 ) -> CanonicalWorkflowSpec:
-    """Builds the canonical workflow specification representing the 5-step E2E routine."""
+    """Builds the reference specification for the 5-step Gmail -> CRM -> Slack routine.
+
+    The same specification is produced by the discovery pipeline from observed browser activity
+    (see tests/backend/test_observed_to_execution.py); this builder is the hand-written reference.
+    """
     wid = workflow_id or f"wf-e2e-phase16-{uuid.uuid4().hex[:8]}"
 
     step_1_risk = StepRisk(
@@ -107,6 +111,7 @@ def build_phase16_canonical_spec(
             canonical_step_id="can-step-1",
             source_semantic_step_id="sem-step-1",
             source_dna_step_key="gmail:search_email",
+            catalog_action="gmail.search_email",
             application="Gmail",
             event_type="WINDOW_FOCUSED",
             action="search_email",
@@ -121,7 +126,8 @@ def build_phase16_canonical_spec(
         CanonicalStep(
             canonical_step_id="can-step-2",
             source_semantic_step_id="sem-step-2",
-            source_dna_step_key="file:download_attachment",
+            source_dna_step_key="gmail:download_attachment",
+            catalog_action="gmail.download_attachment",
             application="Gmail",
             event_type="FILE_DOWNLOADED",
             action="download_attachment",
@@ -137,6 +143,7 @@ def build_phase16_canonical_spec(
             canonical_step_id="can-step-3",
             source_semantic_step_id="sem-step-3",
             source_dna_step_key="crm:find_customer",
+            catalog_action="crm.find_customer",
             application="CRM",
             event_type="WINDOW_FOCUSED",
             action="find_customer",
@@ -152,6 +159,7 @@ def build_phase16_canonical_spec(
             canonical_step_id="can-step-4",
             source_semantic_step_id="sem-step-4",
             source_dna_step_key="crm:update_customer_record",
+            catalog_action="crm.update_customer_record",
             application="CRM",
             event_type="WINDOW_FOCUSED",
             action="update_customer_record",
@@ -167,6 +175,7 @@ def build_phase16_canonical_spec(
             canonical_step_id="can-step-5",
             source_semantic_step_id="sem-step-5",
             source_dna_step_key="slack:send_notification",
+            catalog_action="slack.send_notification",
             application="Slack",
             event_type="WINDOW_FOCUSED",
             action="send_notification",
@@ -184,7 +193,7 @@ def build_phase16_canonical_spec(
         ParameterBinding(
             source_parameter="search_query",
             semantic_name="search_query",
-            source_field="metadata.search_query",
+            source_field="action.search_query",
             associated_step_key="gmail:search_email",
             associated_application="Gmail",
             inferred_type=VariableType.STRING,
@@ -195,7 +204,7 @@ def build_phase16_canonical_spec(
             source_parameter="attachment_filename",
             semantic_name="attachment_filename",
             source_field="metadata.filename",
-            associated_step_key="file:download_attachment",
+            associated_step_key="gmail:download_attachment",
             associated_application="Gmail",
             inferred_type=VariableType.FILENAME,
             observed_values=["invoice_101.pdf"],
@@ -204,7 +213,7 @@ def build_phase16_canonical_spec(
         ParameterBinding(
             source_parameter="customer_query",
             semantic_name="customer_query",
-            source_field="metadata.customer_id",
+            source_field="action.customer_query",
             associated_step_key="crm:find_customer",
             associated_application="CRM",
             inferred_type=VariableType.IDENTIFIER,
@@ -214,7 +223,7 @@ def build_phase16_canonical_spec(
         ParameterBinding(
             source_parameter="customer_status",
             semantic_name="customer_status",
-            source_field="metadata.status",
+            source_field="action.customer_status",
             associated_step_key="crm:update_customer_record",
             associated_application="CRM",
             inferred_type=VariableType.STRING,

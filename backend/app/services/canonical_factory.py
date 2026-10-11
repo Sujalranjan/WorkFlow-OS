@@ -26,9 +26,11 @@ from app.models.canonical import (
     CanonicalOptionalStep,
     CanonicalStep,
     CanonicalWorkflowSpec,
+    StepRisk,
 )
 from app.models.dna import WorkflowDNA
 from app.models.semantic import SemanticWorkflow
+from app.services.action_catalog import CatalogAction, get_action
 from app.services.parameter_binder import ParameterBinder
 from app.services.risk_analyzer import RiskAnalyzer
 
@@ -43,6 +45,18 @@ class CanonicalWorkflowFactory:
     ) -> None:
         self.parameter_binder = parameter_binder or ParameterBinder()
         self.risk_analyzer = risk_analyzer or RiskAnalyzer()
+
+    @staticmethod
+    def catalog_step_risk(step_id: str, catalog: CatalogAction) -> StepRisk:
+        return StepRisk(
+            step_id=step_id,
+            application=catalog.application,
+            action=catalog.action,
+            risk_level=catalog.risk_level,
+            risk_category=catalog.risk_category,
+            reason=catalog.risk_reason,
+            requires_confirmation=catalog.requires_confirmation,
+        )
 
     def create_specification(
         self,
@@ -72,8 +86,7 @@ class CanonicalWorkflowFactory:
         # DNA Invariants mapped by step_key
         dna_inv_map = {inv.step_key: inv for inv in dna.invariant_steps}
 
-        # Collect tuples for batch risk assessment: (step_id, app, action, desc, event_type)
-        risk_tuples: List[tuple] = []
+        step_risks: List[StepRisk] = []
         canonical_steps: List[CanonicalStep] = []
 
         for idx, sem_step in enumerate(semantic_wf.semantic_steps, 1):
@@ -81,39 +94,47 @@ class CanonicalWorkflowFactory:
             dna_inv = dna_inv_map.get(sem_step.source_dna_step_key)
             ev_type = dna_inv.event_type if dna_inv else ""
             occ_ratio = dna_inv.occurrence_ratio if dna_inv else 1.0
+            catalog = get_action(dna_inv.catalog_action) if dna_inv else None
 
-            # Analyze step risk
-            step_risk = self.risk_analyzer.analyze_step(
-                step_id=can_step_id,
-                application=sem_step.application,
-                action=sem_step.action,
-                description=sem_step.description,
-                event_type=ev_type,
-            )
+            if catalog:
+                # Executable step: action name, application and risk come from the catalog
+                # (deterministic ground truth), never from the LLM's wording.
+                step_risk = self.catalog_step_risk(can_step_id, catalog)
+                action = catalog.action
+                application = catalog.application
+                input_vars = [p.name for p in catalog.parameters]
+                output_vars = list(catalog.produces)
+            else:
+                step_risk = self.risk_analyzer.analyze_step(
+                    step_id=can_step_id,
+                    application=sem_step.application,
+                    action=sem_step.action,
+                    description=sem_step.description,
+                    event_type=ev_type,
+                )
+                action = sem_step.action
+                application = sem_step.application
+                input_vars = list(sem_step.input_variables)
+                output_vars = list(sem_step.output_variables)
 
             canonical_step = CanonicalStep(
                 canonical_step_id=can_step_id,
                 source_semantic_step_id=sem_step.step_id,
                 source_dna_step_key=sem_step.source_dna_step_key,
-                application=sem_step.application,
+                application=application,
                 event_type=ev_type,
-                action=sem_step.action,
+                action=action,
                 description=sem_step.description,
-                input_variables=list(sem_step.input_variables),
-                output_variables=list(sem_step.output_variables),
+                input_variables=input_vars,
+                output_variables=output_vars,
                 evidence_reference=sem_step.evidence_reference,
                 risk=step_risk,
                 occurrence_ratio=occ_ratio,
                 classification="invariant",
+                catalog_action=catalog.action_id if catalog else None,
             )
             canonical_steps.append(canonical_step)
-            risk_tuples.append((
-                can_step_id,
-                sem_step.application,
-                sem_step.action,
-                sem_step.description,
-                ev_type,
-            ))
+            step_risks.append(step_risk)
 
         # 3. Build Optional Step Traceability Map
         dna_opt_map = {opt.step_key: opt for opt in dna.optional_steps}
@@ -146,16 +167,10 @@ class CanonicalWorkflowFactory:
                 classification="optional",
             )
             canonical_opt_steps.append(canonical_opt)
-            risk_tuples.append((
-                can_opt_id,
-                sem_opt.application,
-                sem_opt.condition_or_trigger,
-                sem_opt.description,
-                ev_type,
-            ))
+            step_risks.append(opt_risk)
 
         # 4. Aggregated Risk Assessment
-        risk_assessment = self.risk_analyzer.assess_workflow_risks(risk_tuples)
+        risk_assessment = self.risk_analyzer.aggregate_step_risks(step_risks)
 
         # 5. Approval State Initialization (Always requires review initially)
         approval_metadata = ApprovalMetadata(

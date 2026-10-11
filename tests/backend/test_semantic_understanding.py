@@ -170,6 +170,7 @@ def test_dna_immutability_after_interpretation(sample_workflow_dna) -> None:
     assert dna_json_before == dna_json_after
 
 
+@pytest.mark.live
 @pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="Requires live GEMINI_API_KEY in environment")
 def test_live_gemini_provider_integration(sample_workflow_dna) -> None:
     """Optional live integration test with real Google Gemini API."""

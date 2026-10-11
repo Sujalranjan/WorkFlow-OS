@@ -24,6 +24,10 @@ class InvariantStep(BaseModel):
     total_sessions: int = Field(..., description="Total supporting sessions analyzed")
     occurrence_ratio: float = Field(..., description="Occurrence ratio (1.0 for true invariants)")
     classification: str = Field(default="invariant", description="Classification label")
+    catalog_action: Optional[str] = Field(
+        default=None,
+        description="Executable ActionCatalog id (e.g. 'gmail.search_email') when the step was classified; None for observational steps",
+    )
 
 
 class OptionalStep(BaseModel):
@@ -36,6 +40,7 @@ class OptionalStep(BaseModel):
     occurrence_ratio: float = Field(..., description="Ratio of sessions containing this step (< 1.0)")
     supporting_session_ids: List[str] = Field(default_factory=list, description="Session IDs where step was observed")
     classification: str = Field(default="optional", description="Classification label")
+    catalog_action: Optional[str] = Field(default=None, description="Executable ActionCatalog id, if classified")
 
 
 class VariableParameter(BaseModel):

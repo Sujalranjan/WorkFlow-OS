@@ -35,6 +35,7 @@ class ParameterResolutionStatus(str, Enum):
     RESOLVED = "resolved"
     UNRESOLVED = "unresolved"
     DEFAULT_SAMPLE = "default_sample"
+    FROM_UPSTREAM = "from_upstream"
 
 
 class ResolvedParameter(BaseModel):
@@ -116,6 +117,10 @@ class PlannedStep(BaseModel):
     requires_confirmation: bool = Field(default=False, description="Whether explicit human confirmation is required")
     evidence_reference: str = Field(..., description="Citation to empirical evidence")
     state_change: ExpectedStateChange = Field(..., description="Expected state transition")
+    catalog_action: Optional[str] = Field(
+        default=None,
+        description="ActionCatalog id; when set, the step is routed to exactly the catalog's executor",
+    )
 
 
 class DryRunStepResult(BaseModel):
@@ -169,6 +174,10 @@ class ExecutionPlan(BaseModel):
     boundaries: WorkflowBoundaries = Field(..., description="Workflow duration and step boundaries")
     risk_assessment: RiskAssessment = Field(..., description="Inherited Phase 6 risk assessment")
     expected_effects: List[ExpectedStateChange] = Field(default_factory=list)
+    excluded_steps: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Observational canonical steps intentionally not executed (with reason)",
+    )
     dry_run_status: str = Field(default="not_started", description="'not_started', 'simulated', 'simulation_failed'")
     dry_run_result: Optional[DryRunResult] = Field(default=None)
 

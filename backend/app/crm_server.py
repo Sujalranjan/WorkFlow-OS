@@ -33,6 +33,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from app.api.crm import router as crm_router
+from app.api.crm_ui import router as crm_ui_router
 from app.repositories.crm_repository import CrmRepository
 
 logging.basicConfig(
@@ -74,6 +75,8 @@ crm_app.add_middleware(
 
 # Mount CRM REST API
 crm_app.include_router(crm_router)
+# Browser UI a person uses while the agent observes (http://127.0.0.1:8001/ui/customers)
+crm_app.include_router(crm_ui_router)
 
 
 @crm_app.get("/")
@@ -86,6 +89,7 @@ def root():
             "health": "/api/crm/health",
             "customers": "/api/crm/customers",
             "search": "/api/crm/customers/search",
+            "ui": "/ui/customers",
         },
     }
 

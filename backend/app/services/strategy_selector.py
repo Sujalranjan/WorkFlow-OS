@@ -25,6 +25,7 @@ from app.models.strategy import (
     StrategyCandidate,
     StrategySelectionResult,
 )
+from app.services.action_catalog import CatalogAction, get_action
 from app.services.execution_policy import ExecutionPolicyEngine
 from app.services.executors.registry import ExecutorRegistry
 
@@ -103,6 +104,79 @@ class StrategySelector:
             ExecutionStrategyType.UI_FALLBACK,
         ]
 
+    def _select_catalog_strategy(self, step: PlannedStep, catalog: CatalogAction) -> StrategySelectionResult:
+        """Exact routing for ActionCatalog steps, still subject to implementation and risk policy."""
+        executor = self.registry.get_by_name(catalog.executor_name)
+        rejection: Optional[str] = None
+        blocked_code: Optional[str] = None
+
+        if executor is None:
+            rejection = f"Catalog executor '{catalog.executor_name}' is not registered."
+            blocked_code = "UNSUPPORTED_EXECUTION_STRATEGY"
+        else:
+            cap = executor.capability
+            if not cap.implemented:
+                rejection = f"Catalog executor '{executor.name}' is not implemented."
+                blocked_code = "UNSUPPORTED_EXECUTION_STRATEGY"
+            elif catalog.action not in cap.supported_actions:
+                rejection = f"Executor '{executor.name}' does not declare action '{catalog.action}'."
+                blocked_code = "UNSUPPORTED_EXECUTION_STRATEGY"
+            elif step.risk.risk_level.value.upper() not in [r.upper() for r in cap.supported_risk_levels]:
+                rejection = (
+                    f"Step risk level '{step.risk.risk_level.value.upper()}' exceeds executor '{executor.name}' "
+                    f"supported levels: {cap.supported_risk_levels}."
+                )
+                blocked_code = "POLICY_REJECTED_RISK"
+            elif (
+                step.risk.risk_category in (RiskCategory.EXTERNAL_CHANGE, RiskCategory.COMMUNICATION)
+                and not cap.requires_external_access
+            ):
+                rejection = f"Policy violation: executor '{executor.name}' is local-only but step changes external state."
+                blocked_code = "POLICY_REJECTED_RISK"
+
+        candidate = StrategyCandidate(
+            strategy=catalog.strategy,
+            executor_name=executor.name if executor else "None",
+            is_implemented=bool(executor and executor.capability.implemented),
+            is_supported=rejection is None or blocked_code == "POLICY_REJECTED_RISK",
+            is_policy_allowed=rejection is None,
+            priority=executor.capability.priority if executor else 100,
+            rejection_reason=rejection,
+        )
+
+        if rejection is None:
+            return StrategySelectionResult(
+                plan_step_id=step.plan_step_id,
+                action=step.action,
+                target=step.application,
+                selected_strategy=catalog.strategy,
+                selected_executor=executor.name,
+                is_executable=True,
+                selection_reason=f"ActionCatalog '{catalog.action_id}' routed exactly to '{executor.name}' ({catalog.strategy.value}).",
+                fallback_used=False,
+                blocked_reason=None,
+                policy_decision="ALLOWED",
+                candidates_considered=[candidate],
+                rejected_strategies=[],
+                rejection_reasons={},
+            )
+
+        return StrategySelectionResult(
+            plan_step_id=step.plan_step_id,
+            action=step.action,
+            target=step.application,
+            selected_strategy=None,
+            selected_executor=None,
+            is_executable=False,
+            selection_reason=f"ActionCatalog '{catalog.action_id}' blocked: {rejection}",
+            fallback_used=False,
+            blocked_reason=blocked_code,
+            policy_decision="BLOCKED",
+            candidates_considered=[candidate],
+            rejected_strategies=[catalog.strategy.value],
+            rejection_reasons={catalog.strategy.value: rejection},
+        )
+
     def select_strategy(
         self,
         step: PlannedStep,
@@ -144,7 +218,12 @@ class StrategySelector:
                 rejection_reasons={s.value: reason for s in candidates_to_eval},
             )
 
-        # 2. Evaluate candidates in deterministic priority order
+        # 2. Catalog actions are routed to exactly one executor by name (no keyword matching)
+        catalog = get_action(step.catalog_action)
+        if catalog is not None:
+            return self._select_catalog_strategy(step, catalog)
+
+        # 3. Evaluate candidates in deterministic priority order
         selected_cand: Optional[StrategyCandidate] = None
         selected_index: int = -1
 

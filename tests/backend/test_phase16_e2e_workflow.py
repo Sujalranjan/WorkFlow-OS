@@ -573,6 +573,7 @@ def test_phase16_security_token_exclusion(isolated_orchestrator):
 # =========================================================================
 # 8. Real Live E2E Integration Test (Conditional on Live Environment)
 # =========================================================================
+@pytest.mark.live
 def test_live_phase16_e2e_workflow_conditional(tmp_path):
     """Conditional real live demonstration exercising real Gmail API, real CRM API, and real Slack API.
 

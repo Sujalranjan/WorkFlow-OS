@@ -58,7 +58,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend
 
 Phase 5 introduces semantic understanding using Google Gemini:
 - `GEMINI_API_KEY`: Your Google AI Studio API key. If unset, the system gracefully operates in offline fallback / mock mode without crashing.
-- `GEMINI_MODEL`: Model identifier (default: `gemini-1.5-flash`).
+- `GEMINI_MODEL`: Model identifier (default: `gemini-3.5-flash-lite`; must be a model your key can access).
 
 ```bash
 # Windows PowerShell

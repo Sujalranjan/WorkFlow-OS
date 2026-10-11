@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/demo", tags=["Demo Orchestration"])
 
-SUPPORTED_SCENARIOS = ["local_file_automation", "invoice_processing"]
+# observed_browser_routine: browser-extension events for Gmail -> CRM -> Slack, which the
+# ActionCatalog turns into an executable workflow.
+SUPPORTED_SCENARIOS = ["local_file_automation", "invoice_processing", "observed_browser_routine"]
 
 
 class SeedActivityRequest(BaseModel):
@@ -502,8 +504,15 @@ def seed_demo_activity(
             detail=f"Unsupported demo scenario '{scenario}'. Supported scenarios: {SUPPORTED_SCENARIOS}",
         )
 
+    sessions_created = 5
     if scenario == "local_file_automation":
         events = build_local_file_automation_events()
+    elif scenario == "observed_browser_routine":
+        from app.services.observed_sessions import SESSIONS, build_observed_events
+
+        # Recent timestamps so the sessions fall inside the default discovery window
+        events = build_observed_events(datetime.now(timezone.utc) - timedelta(hours=len(SESSIONS) + 1))
+        sessions_created = len(SESSIONS)
     else:
         events = build_invoice_processing_events()
 
@@ -516,9 +525,9 @@ def seed_demo_activity(
 
     return SeedActivityResponse(
         events_created=created_count,
-        sessions_created=5,
+        sessions_created=sessions_created,
         scenario=scenario,
-        message=f"Successfully seeded {created_count} synthetic demo ActivityEvents across 5 task sessions for '{scenario}'.",
+        message=f"Successfully seeded {created_count} synthetic demo ActivityEvents across {sessions_created} task sessions for '{scenario}'.",
     )
 
 
@@ -579,7 +588,8 @@ def reset_demo_state(service: EventService = Depends(get_event_service)) -> Rese
 
     # Invalidate in-memory interpretations cache
     if semantic_module._semantic_engine is not None:
-        semantic_module._semantic_engine._interpretations.clear()
+        semantic_module._semantic_engine._semantic_store.clear()
+        semantic_module._semantic_engine._dna_to_semantic_map.clear()
 
     logger.info(
         f"Reset demo state: {events_deleted} events, {specs_deleted} specs, "
@@ -624,20 +634,41 @@ def seed_e2e_workflow(
     Creates a CanonicalWorkflowSpec in REQUIRES_REVIEW state (or approved if auto_approve=True).
     Ensures Demo CRM test data is seeded for customer 'cust-001'.
     """
+    from app.models.crm import CrmCustomer
     from app.repositories.crm_repository import CrmRepository
     from app.services.phase16_workflow import Phase16Orchestrator
 
     # Ensure Demo CRM has customer record 'cust-001'
     crm_repo = CrmRepository()
-    if not crm_repo.get_customer("cust-001"):
-        crm_repo.create_customer(
-            customer_id="cust-001",
-            name="Rahul Sharma",
-            email="rahul.sharma@example.com",
-            company="Acme Corp",
-            status="pending_replacement",
-            notes="Initial replacement request logged",
+    if not crm_repo.get_by_id("cust-001"):
+        crm_repo.save(
+            CrmCustomer(
+                customer_id="cust-001",
+                name="Rahul Sharma",
+                email="rahul.sharma@example.com",
+                company="Acme Corp",
+                status="pending_replacement",
+                notes="Initial replacement request logged",
+            )
         )
+
+    # Also ensure customer exists in independent CRM service if running on port 8001
+    try:
+        from app.services.crm_client import CrmApiClient
+        crm_client = CrmApiClient(base_url="http://127.0.0.1:8001/api/crm")
+        if not crm_client.get_customer("cust-001"):
+            crm_client.create_customer(
+                {
+                    "customer_id": "cust-001",
+                    "name": "Rahul Sharma",
+                    "email": "rahul.sharma@example.com",
+                    "company": "Acme Corp",
+                    "status": "pending_replacement",
+                    "notes": "Initial replacement request logged",
+                }
+            )
+    except Exception:
+        pass
 
     orchestrator = Phase16Orchestrator()
     spec = orchestrator.prepare_workflow(

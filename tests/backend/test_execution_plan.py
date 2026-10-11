@@ -163,6 +163,7 @@ def test_execution_strategy_selection_and_explanation(approved_spec):
             ExecutionStrategy.BROWSER_AUTOMATION,
             ExecutionStrategy.ACCESSIBILITY_SEMANTIC_UI,
             ExecutionStrategy.UI_FALLBACK,
+            ExecutionStrategy.CONTROLLED_LOCAL,
         ]
         assert len(strat.reason) > 5
         assert len(strat.target_technology) > 2

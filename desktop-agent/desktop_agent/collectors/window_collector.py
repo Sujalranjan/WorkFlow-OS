@@ -73,6 +73,8 @@ class WindowsWindowCollector(BaseCollector):
 
             # Clean application name (e.g. 'chrome.exe' -> 'Google Chrome')
             app_name = self.normalize_app_name(app_name)
+            # Browser tabs: report the web application, not just the browser
+            app_name = self.resolve_web_application(app_name, window_title)
             return app_name, window_title
         except Exception:
             return None
@@ -94,6 +96,24 @@ class WindowsWindowCollector(BaseCollector):
             "windowsterminal.exe": "Windows Terminal",
         }
         return mapping.get(raw_name.lower(), raw_name)
+
+    BROWSERS = {"Google Chrome", "Microsoft Edge", "Mozilla Firefox"}
+    # Window-title markers of web applications WorkFlowOS understands, checked in order.
+    WEB_APPLICATIONS = (
+        (" - Gmail", "Gmail"),
+        ("WorkFlowOS CRM", "CRM"),
+        (" - Slack", "Slack"),
+    )
+
+    @classmethod
+    def resolve_web_application(cls, app_name: str, window_title: str) -> str:
+        """Map a browser window to the web app it shows (e.g. 'Inbox - Gmail - Google Chrome' -> 'Gmail')."""
+        if app_name not in cls.BROWSERS:
+            return app_name
+        for marker, web_app in cls.WEB_APPLICATIONS:
+            if marker in window_title:
+                return web_app
+        return app_name
 
     def should_emit_event(self, app_name: str, window_title: str, now: float) -> bool:
         """Evaluate deduplication and debounce logic."""

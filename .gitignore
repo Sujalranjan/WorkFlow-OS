@@ -71,3 +71,6 @@ token.json
 *.sqlite3
 workflowos_sandbox/
 
+
+# TypeScript incremental build info
+*.tsbuildinfo

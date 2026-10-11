@@ -20,6 +20,7 @@ SECURITY BOUNDARIES:
 - Never leaks or logs OAuth tokens, client secrets, or Authorization headers.
 """
 
+import re
 from datetime import datetime, timezone
 import hashlib
 import logging
@@ -44,6 +45,132 @@ from app.services.gmail_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def extract_query_filters(query: str) -> Dict[str, str]:
+    """Extracts explicit search filters like subject:\"...\" or from:\"...\" from a Gmail query string."""
+    filters: Dict[str, str] = {}
+    if not query:
+        return filters
+    pattern = r'(\b[a-zA-Z_]+):(?:"([^"]+)"|(\S+))'
+    for match in re.finditer(pattern, query):
+        key = match.group(1).lower()
+        val = match.group(2) if match.group(2) is not None else match.group(3)
+        if key in ("subject", "from", "to", "filename"):
+            filters[key] = val.strip()
+    return filters
+
+
+def select_deterministic_message(
+    messages: List[Any],
+    query: str,
+) -> Tuple[Optional[Any], str, str]:
+    """Deterministically selects the intended Gmail message based on query criteria and mailbox order.
+
+    Documented Selection Precedence:
+    1. NO_MATCHING_MESSAGES:
+       If no messages were returned by Gmail API, returns (None, 'NO_MATCHING_MESSAGES', ...).
+    2. EXACT_SUBJECT_MATCH:
+       If query specifies an explicit subject filter (e.g. subject:\"...\" or subject:word),
+       filters candidates where the subject contains the query subject string (case-insensitive).
+       If matches are found, prioritizes candidates with attachments (if workflow seeks attachments),
+       then selects the newest matching message (first in reverse-chronological order).
+    3. EXACT_SENDER_MATCH:
+       If query specifies an explicit sender filter (e.g. from:\"...\" or from:word),
+       filters candidates where sender contains the query sender string (case-insensitive).
+       Prioritizes candidates with attachments, then selects the newest matching message.
+    4. UNIQUE_QUERY_MATCH:
+       If the query returned exactly 1 message, selects that unique message.
+    5. REVERSE_CHRONOLOGICAL_FIRST:
+       For general queries (e.g. 'has:attachment') or multiple matching candidates without a more
+       specific tie-breaker, deterministically selects the newest message (first returned by the Gmail API).
+    """
+    if not messages:
+        return (
+            None,
+            "NO_MATCHING_MESSAGES",
+            f"No Gmail messages matched query '{query}'.",
+        )
+
+    def get_msg_field(m: Any, field: str, default: Any = "") -> Any:
+        if isinstance(m, dict):
+            return m.get(field, default)
+        return getattr(m, field, default)
+
+    filters = extract_query_filters(query)
+
+    # Rule 2: Explicit Subject Match
+    if "subject" in filters:
+        target_subj = filters["subject"].lower()
+        matching_subjs = [
+            m for m in messages
+            if target_subj in str(get_msg_field(m, "subject", "")).lower()
+        ]
+        if matching_subjs:
+            with_att = [
+                m for m in matching_subjs
+                if get_msg_field(m, "has_attachments", False) or bool(get_msg_field(m, "attachments", []))
+            ]
+            chosen = with_att[0] if with_att else matching_subjs[0]
+            chosen_id = get_msg_field(chosen, "message_id", "")
+            return (
+                chosen,
+                "EXACT_SUBJECT_MATCH",
+                f"Deterministically selected message matching query subject filter '{filters['subject']}' (id={chosen_id}).",
+            )
+
+    # Rule 3: Explicit Sender Match
+    if "from" in filters:
+        target_sender = filters["from"].lower()
+        matching_senders = [
+            m for m in messages
+            if target_sender in str(get_msg_field(m, "sender", "")).lower()
+        ]
+        if matching_senders:
+            with_att = [
+                m for m in matching_senders
+                if get_msg_field(m, "has_attachments", False) or bool(get_msg_field(m, "attachments", []))
+            ]
+            chosen = with_att[0] if with_att else matching_senders[0]
+            chosen_id = get_msg_field(chosen, "message_id", "")
+            return (
+                chosen,
+                "EXACT_SENDER_MATCH",
+                f"Deterministically selected message matching query sender filter '{filters['from']}' (id={chosen_id}).",
+            )
+
+    # Rule 4: Unique Query Match
+    if len(messages) == 1:
+        chosen = messages[0]
+        chosen_id = get_msg_field(chosen, "message_id", "")
+        return (
+            chosen,
+            "UNIQUE_QUERY_MATCH",
+            f"Query uniquely resolved to exactly 1 message in mailbox (id={chosen_id}).",
+        )
+
+    # Rule 5: Reverse Chronological First (Newest message by Gmail ordering)
+    if "has:attachment" in query.lower():
+        with_att = [
+            m for m in messages
+            if get_msg_field(m, "has_attachments", False) or bool(get_msg_field(m, "attachments", []))
+        ]
+        if with_att:
+            chosen = with_att[0]
+            chosen_id = get_msg_field(chosen, "message_id", "")
+            return (
+                chosen,
+                "REVERSE_CHRONOLOGICAL_FIRST",
+                f"Query matched {len(messages)} messages ({len(with_att)} with attachments); deterministically selected newest message with attachment according to Gmail API ordering (id={chosen_id}).",
+            )
+
+    chosen = messages[0]
+    chosen_id = get_msg_field(chosen, "message_id", "")
+    return (
+        chosen,
+        "REVERSE_CHRONOLOGICAL_FIRST",
+        f"Query matched {len(messages)} messages; deterministically selected newest message according to Gmail API ordering (id={chosen_id}).",
+    )
 
 
 class GmailApiExecutor(BaseExecutor):
@@ -199,6 +326,20 @@ class GmailApiExecutor(BaseExecutor):
                     or resolved_params.get("q")
                     or "simulated_query"
                 )
+                filters_sim = extract_query_filters(query_str)
+                sim_subject = filters_sim.get("subject") or (
+                    "Customer Replacement Request - DEMO" if "DEMO" in query_str else "Simulated Support Request"
+                )
+                sim_msg = {
+                    "message_id": "msg-simulated-dry-run",
+                    "subject": sim_subject,
+                    "sender": filters_sim.get("from") or "customer@example.com",
+                    "snippet": "Simulated email content for dry run",
+                    "has_attachments": True,
+                    "attachments": [
+                        {"id": "att-sim-1", "filename": "sample_invoice.pdf", "size_bytes": 1024}
+                    ],
+                }
                 return ExecutionStepResult(
                     planned_step_id=step.plan_step_id,
                     action_name=step.action,
@@ -211,14 +352,12 @@ class GmailApiExecutor(BaseExecutor):
                         "operation": "search_email",
                         "query": query_str,
                         "total_found": 1,
-                        "messages": [
-                            {
-                                "message_id": "msg-simulated-dry-run",
-                                "subject": "Simulated Support Request",
-                                "sender": "customer@example.com",
-                            }
-                        ],
-                        "message_id": "msg-simulated-dry-run",
+                        "messages": [sim_msg],
+                        "selected_message": sim_msg,
+                        "selected_message_id": sim_msg["message_id"],
+                        "selection_rule": "DRY_RUN_SIMULATION",
+                        "selection_reason": "Dry run deterministic simulation",
+                        "message_id": sim_msg["message_id"],
                         "status": "SIMULATED",
                     },
                     affected_resources=[],
@@ -342,6 +481,19 @@ class GmailApiExecutor(BaseExecutor):
             max_results = int(resolved_params.get("max_results", 10))
             search_result = self.client.search_messages(query=query_str, max_results=max_results)
 
+            # Deterministic Message Selection
+            selected_msg, selection_rule, selection_reason = select_deterministic_message(
+                messages=search_result.messages,
+                query=query_str,
+            )
+
+            selected_dict = (
+                selected_msg.model_dump()
+                if (selected_msg and hasattr(selected_msg, "model_dump"))
+                else (selected_msg if isinstance(selected_msg, dict) else None)
+            )
+            selected_id = selected_dict.get("message_id") if selected_dict else None
+
             return ExecutionStepResult(
                 planned_step_id=step.plan_step_id,
                 action_name=step.action,
@@ -354,13 +506,17 @@ class GmailApiExecutor(BaseExecutor):
                     "query": query_str,
                     "total_found": search_result.total_found,
                     "messages": [m.model_dump() for m in search_result.messages],
+                    "selected_message": selected_dict,
+                    "selected_message_id": selected_id,
+                    "selection_rule": selection_rule,
+                    "selection_reason": selection_reason,
                     "searched_at": search_result.searched_at,
                     "operation": "search_email",
                     "status": "COMPLETED",
                 },
                 affected_resources=[],  # Strictly read-only
                 selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
-                selection_reason="Executed read-only search via Gmail API",
+                selection_reason=f"Executed read-only search via Gmail API ({selection_rule}: {selection_reason})",
                 fallback_used=False,
                 policy_decision="ALLOWED",
                 start_time=start_time,

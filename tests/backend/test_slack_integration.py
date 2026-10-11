@@ -748,6 +748,7 @@ def test_slack_verification_fails_when_message_not_found():
 # =========================================================================
 # 9. Live Slack Integration Test (Conditional on Real Credentials)
 # =========================================================================
+@pytest.mark.live
 def test_live_slack_notification_conditional():
     """Runs a real live notification test if SLACK_BOT_TOKEN and SLACK_CHANNEL_ID are present.
 

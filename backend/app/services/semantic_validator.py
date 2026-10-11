@@ -64,6 +64,14 @@ class SemanticWorkflowValidator:
                         f"Validation Error in step #{idx + 1}: Application '{app_name}' does not exist in source DNA."
                     )
 
+            # Rule 3b: Executable coverage - an LLM may not silently drop an executable catalog step
+            for dna_step in source_dna.invariant_steps:
+                if dna_step.catalog_action and dna_step.step_key not in observed_sem_step_keys:
+                    errors.append(
+                        f"Validation Error: Executable DNA step '{dna_step.step_key}' "
+                        f"(catalog action '{dna_step.catalog_action}') is missing from semantic_steps."
+                    )
+
             # Rule 4: Ordering validity - semantic step order must not contradict DNA ordering constraints
             # Check all ordering constraints where both predecessor and successor appear in semantic steps
             for constraint in source_dna.ordering_constraints:

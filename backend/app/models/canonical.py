@@ -174,6 +174,10 @@ class CanonicalStep(BaseModel):
     risk: StepRisk = Field(..., description="Step risk classification and explanation")
     occurrence_ratio: float = Field(default=1.0, description="Empirical occurrence ratio across sessions")
     classification: str = Field(default="invariant", description="Step classification")
+    catalog_action: Optional[str] = Field(
+        default=None,
+        description="Executable ActionCatalog id inherited from WorkflowDNA. None means the step is observational context only.",
+    )
 
 
 class CanonicalOptionalStep(BaseModel):

@@ -25,7 +25,7 @@ from app.config import (
     GMAIL_SCOPES,
     GMAIL_TOKEN_PATH,
 )
-from app.models.gmail import GmailMessageSummary, GmailSearchResult
+from app.models.gmail import GmailAttachmentInfo, GmailMessageSummary, GmailSearchResult
 
 try:
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -33,6 +33,34 @@ except ImportError:
     InstalledAppFlow = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+_PART_FIELDS = "filename,mimeType,body(attachmentId,size)"
+_SUMMARY_FIELDS = (
+    "id,threadId,snippet,internalDate,"
+    f"payload(headers,{_PART_FIELDS},parts({_PART_FIELDS},parts({_PART_FIELDS},parts({_PART_FIELDS}))))"
+)
+
+
+def _list_attachments(payload: Dict[str, Any]) -> List[GmailAttachmentInfo]:
+    """Walk a (field-masked) message payload and list named file parts."""
+    found: List[GmailAttachmentInfo] = []
+
+    def walk(part: Dict[str, Any]) -> None:
+        body = part.get("body", {}) or {}
+        if part.get("filename") and (body.get("attachmentId") or body.get("size")):
+            found.append(
+                GmailAttachmentInfo(
+                    attachment_id=body.get("attachmentId"),
+                    filename=part["filename"],
+                    mime_type=part.get("mimeType"),
+                    size_bytes=int(body.get("size") or 0),
+                )
+            )
+        for sub in part.get("parts", []) or []:
+            walk(sub)
+
+    walk(payload)
+    return found
 
 
 class GmailClientError(Exception):
@@ -227,21 +255,24 @@ class GmailApiClient:
                 msg_id = msg_item.get("id")
                 thread_id = msg_item.get("threadId", "")
 
+                # format=full with a field mask: returns headers and the attachment
+                # listing (filename/id/size) but never body or attachment data.
                 msg_data = (
                     service.users()
                     .messages()
-                    .get(
-                        userId="me",
-                        id=msg_id,
-                        format="metadata",
-                        metadataHeaders=["Subject", "From", "Date"],
-                    )
+                    .get(userId="me", id=msg_id, format="full", fields=_SUMMARY_FIELDS)
                     .execute()
                 )
 
                 # Extract headers safely
-                headers = msg_data.get("payload", {}).get("headers", [])
-                header_map = {h.get("name", "").lower(): h.get("value", "") for h in headers}
+                payload = msg_data.get("payload", {})
+                headers = payload.get("headers", [])
+                header_map = {
+                    h.get("name", "").lower(): h.get("value", "")
+                    for h in headers
+                    if h.get("name", "").lower() in ("subject", "from", "date")
+                }
+                attachments = _list_attachments(payload)
 
                 normalized_list.append(
                     GmailMessageSummary(
@@ -251,6 +282,8 @@ class GmailApiClient:
                         sender=header_map.get("from", "(Unknown Sender)"),
                         timestamp=header_map.get("date") or msg_data.get("internalDate"),
                         snippet=msg_data.get("snippet", ""),
+                        has_attachments=bool(attachments),
+                        attachments=attachments,
                     )
                 )
 

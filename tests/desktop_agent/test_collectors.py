@@ -131,3 +131,13 @@ def test_file_system_collector_lifecycle() -> None:
         assert collector._observer is None
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def test_window_collector_resolves_web_applications_in_browsers():
+    resolve = WindowsWindowCollector.resolve_web_application
+    assert resolve("Google Chrome", "Inbox (3) - me@example.com - Gmail - Google Chrome") == "Gmail"
+    assert resolve("Microsoft Edge", "Customer cust-001 - WorkFlowOS CRM - Work - Microsoft Edge") == "CRM"
+    assert resolve("Google Chrome", "ops-replacements (Channel) - Acme - Slack - Google Chrome") == "Slack"
+    assert resolve("Google Chrome", "Search results - Google Chrome") == "Google Chrome"
+    # Non-browser windows are never re-labelled, even if the title mentions Gmail
+    assert resolve("Notepad", "notes about Gmail - Notepad") == "Notepad"

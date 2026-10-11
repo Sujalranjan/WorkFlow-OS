@@ -10,13 +10,14 @@ import json
 import sqlite3
 from typing import Generator, List, Optional
 
+from app.config import DATABASE_PATH
 from app.models.execution_plan import DryRunResult, ExecutionPlan
 
 
 class ExecutionPlanRepository:
     """Manages SQLite persistence for ExecutionPlan entities."""
 
-    def __init__(self, db_path: str = "workflowos.db") -> None:
+    def __init__(self, db_path: str = DATABASE_PATH) -> None:
         self.db_path = db_path
         self._memory_conn: Optional[sqlite3.Connection] = None
         if self.db_path == ":memory:":

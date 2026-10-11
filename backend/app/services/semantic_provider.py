@@ -11,8 +11,11 @@ import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
+import httpx
+
 from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.models.dna import WorkflowDNA
+from app.services.action_catalog import get_action
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,7 @@ def build_semantic_interpretation_prompt(dna: WorkflowDNA) -> str:
                 "application": inv.application,
                 "event_type": inv.event_type,
                 "occurrence_ratio": inv.occurrence_ratio,
+                "catalog_action": inv.catalog_action,
             }
             for inv in dna.invariant_steps
         ],
@@ -101,6 +105,7 @@ RULES:
 7. Optional Steps: Every optional step in 'optional_steps' must map to an observed DNA optional step.
 8. NO Automation Code: Do NOT produce executable code, browser automation, click coordinates, or shell scripts.
 9. Confidence: Assign 'model_interpretation_confidence' (0.0 to 1.0) explicitly as an LLM estimate.
+10. Executable Steps: Every invariant step with a non-null 'catalog_action' MUST appear in 'semantic_steps'. For those steps set 'action' to the part of 'catalog_action' after the dot (e.g. 'gmail.search_email' -> 'search_email'). Steps with a null 'catalog_action' are observational context; describe them but do not invent actions for them.
 
 REQUIRED JSON OUTPUT FORMAT (Strict JSON only, no markdown formatting, no code block fences):
 {{
@@ -177,63 +182,43 @@ class GeminiSemanticProvider(SemanticModelProvider):
 
         prompt = build_semantic_interpretation_prompt(dna)
 
-        # Attempt 1: Using google.generativeai if available
+        # Gemini REST API with JSON output mode. The API key travels in a header, not the URL,
+        # so it never appears in logs or exception messages.
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
         try:
-            import google.generativeai as genai
-
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(
-                model_name=self.model_name,
-                generation_config={"response_mime_type": "application/json"},
-            )
-            response = model.generate_content(prompt)
-            raw_text = response.text.strip()
-            # Strip markdown fences if present
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-
-            parsed = json.loads(raw_text.strip())
-            parsed["source_dna_id"] = dna.dna_id
-            parsed["boundaries"] = dna.boundaries.model_dump()
-            parsed["model_provider"] = f"gemini/{self.model_name}"
-            parsed["status"] = "interpreted"
-            return parsed
-        except ImportError:
-            pass
-        except Exception as err:
-            logger.warning(f"google.generativeai SDK call failed, attempting HTTP fallback: {err}")
-
-        # Attempt 2: Direct REST call via httpx
-        try:
-            import httpx
-
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseMimeType": "application/json"},
-            }
             with httpx.Client(timeout=self.timeout_seconds) as client:
-                res = client.post(url, json=payload)
-                if res.status_code != 200:
-                    raise ProviderUnavailableError(
-                        f"Gemini API returned status {res.status_code}: {res.text[:200]}"
-                    )
-                data = res.json()
-                text_content = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(text_content.strip())
-                parsed["source_dna_id"] = dna.dna_id
-                parsed["boundaries"] = dna.boundaries.model_dump()
-                parsed["model_provider"] = f"gemini/{self.model_name}"
-                parsed["status"] = "interpreted"
-                return parsed
-        except Exception as http_err:
+                res = client.post(url, json=payload, headers={"x-goog-api-key": self.api_key})
+        except httpx.HTTPError as http_err:
+            raise ProviderUnavailableError(f"Failed to reach Gemini API: {type(http_err).__name__}") from http_err
+
+        if res.status_code != 200:
             raise ProviderUnavailableError(
-                f"Failed to communicate with Gemini API: {http_err}"
-            ) from http_err
+                f"Gemini API returned status {res.status_code} for model '{self.model_name}': {res.text[:200]}"
+            )
+        try:
+            text_content = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+            parsed = json.loads(_strip_code_fences(text_content))
+        except (KeyError, IndexError, TypeError, ValueError) as parse_err:
+            raise ProviderUnavailableError(f"Gemini API returned an unparseable response: {parse_err}") from parse_err
+
+        parsed["source_dna_id"] = dna.dna_id
+        parsed["boundaries"] = dna.boundaries.model_dump()
+        parsed["model_provider"] = f"gemini/{self.model_name}"
+        parsed["status"] = "interpreted"
+        return parsed
+
+
+def _strip_code_fences(text: str) -> str:
+    raw = text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    return raw.strip()
 
 
 class MockSemanticProvider(SemanticModelProvider):
@@ -262,7 +247,10 @@ class MockSemanticProvider(SemanticModelProvider):
 
             # Derive meaningful action description based on application
             action_desc = f"Execute {inv.event_type} in {app}"
-            if "gmail" in app.lower():
+            catalog = get_action(inv.catalog_action)
+            if catalog:
+                action_desc = catalog.action
+            elif "gmail" in app.lower():
                 action_desc = "Review and open customer replacement request email"
             elif "file" in app.lower():
                 if "open" in inv.event_type.lower():

@@ -165,6 +165,12 @@ class RiskAnalyzer:
         steps: List[Tuple[str, str, str, str, str]],  # (step_id, app, action, desc, event_type)
     ) -> RiskAssessment:
         """Analyze a list of steps and produce an aggregated workflow-level RiskAssessment."""
+        return self.aggregate_step_risks(
+            [self.analyze_step(s_id, app, action, desc, ev_type) for s_id, app, action, desc, ev_type in steps]
+        )
+
+    def aggregate_step_risks(self, risks: List[StepRisk]) -> RiskAssessment:
+        """Aggregate already-classified step risks into a workflow-level RiskAssessment."""
         step_risks: List[StepRisk] = []
         sensitive_factors: List[str] = []
 
@@ -178,8 +184,7 @@ class RiskAnalyzer:
             RiskCategory.POTENTIALLY_SENSITIVE: 0,
         }
 
-        for s_id, app, action, desc, ev_type in steps:
-            sr = self.analyze_step(s_id, app, action, desc, ev_type)
+        for sr in risks:
             step_risks.append(sr)
             category_counts[sr.risk_category] += 1
 

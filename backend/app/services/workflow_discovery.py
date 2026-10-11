@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 from typing import List, Optional, Set, Tuple
 from app.models.discovery import DiscoveryCandidate, NormalizedStep, TaskSession
 from app.models.event import ActivityEvent
+from app.services.action_catalog import application_for_event, step_key_for_event
 
 
 class WorkflowDiscoveryEngine:
@@ -40,9 +41,12 @@ class WorkflowDiscoveryEngine:
         return app_name.strip().lower()
 
     def event_to_token(self, event: ActivityEvent) -> str:
-        """Convert an ActivityEvent into a normalized step token (e.g. 'google chrome:window_focused')."""
-        norm_app = self.normalize_app_name(event.application)
-        return f"{norm_app}:{event.event_type.value}"
+        """Convert an ActivityEvent into a normalized step token.
+
+        Events classified by the ActionCatalog use the catalog step key (e.g. 'gmail:search_email');
+        all others use '<application>:<event_type>' (e.g. 'google chrome:window_focused').
+        """
+        return step_key_for_event(event)
 
     def extract_core_sequence(self, session: TaskSession) -> List[Tuple[str, ActivityEvent]]:
         """Extract a filtered sequence of (token, original_event) removing known incidental noise."""
@@ -144,7 +148,7 @@ class WorkflowDiscoveryEngine:
                 rep_steps.append(
                     NormalizedStep(
                         step_index=step_idx + 1,
-                        application=evt.application or "Unknown",
+                        application=application_for_event(evt),
                         event_type=evt.event_type.value,
                         action_key=tok,
                         is_optional=False,

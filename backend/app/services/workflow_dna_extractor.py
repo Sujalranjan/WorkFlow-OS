@@ -27,6 +27,12 @@ from app.models.dna import (
     WorkflowDNA,
 )
 from app.models.event import ActivityEvent
+from app.services.action_catalog import (
+    application_for_event,
+    classify_event,
+    get_action_by_step_key,
+    step_key_for_event,
+)
 
 
 class WorkflowDNAExtractor:
@@ -43,8 +49,7 @@ class WorkflowDNAExtractor:
 
     @classmethod
     def _get_step_key(cls, event: ActivityEvent) -> str:
-        norm_app = cls._normalize_app_name(event.application)
-        return f"{norm_app}:{event.event_type.value}"
+        return step_key_for_event(event)
 
     def extract_dna(
         self, candidate: DiscoveryCandidate, supporting_sessions: List[TaskSession]
@@ -119,7 +124,7 @@ class WorkflowDNAExtractor:
                 key = self._get_step_key(evt)
                 seen_in_this_session.add(key)
                 if key not in step_meta_map:
-                    step_meta_map[key] = (evt.application or "Unknown", evt.event_type.value)
+                    step_meta_map[key] = (application_for_event(evt), evt.event_type.value)
 
             for key in seen_in_this_session:
                 step_session_map[key].add(sess.session_id)
@@ -141,6 +146,8 @@ class WorkflowDNAExtractor:
             occurrences = len(supporting_ids)
             ratio = occurrences / total_sessions
             app, event_type = step_meta_map[key]
+            catalog = get_action_by_step_key(key)
+            catalog_id = catalog.action_id if catalog else None
 
             if ratio >= self.invariant_threshold:
                 invariants.append(
@@ -152,6 +159,7 @@ class WorkflowDNAExtractor:
                         total_sessions=total_sessions,
                         occurrence_ratio=round(ratio, 3),
                         classification="invariant",
+                        catalog_action=catalog_id,
                     )
                 )
             elif occurrences >= 1:
@@ -165,6 +173,7 @@ class WorkflowDNAExtractor:
                         occurrence_ratio=round(ratio, 3),
                         supporting_session_ids=supporting_ids,
                         classification="optional",
+                        catalog_action=catalog_id,
                     )
                 )
 
@@ -180,6 +189,8 @@ class WorkflowDNAExtractor:
         # Collect metadata observations grouped by (step_key, field_name)
         # key: (step_key, field_name) -> list of observed string values
         observations: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        # Parameters of catalog-classified steps: (step_key, parameter_name) -> observed values
+        action_observations: Dict[Tuple[str, str], List[str]] = defaultdict(list)
         step_app_map: Dict[str, str] = {}
 
         for sess in sessions:
@@ -188,7 +199,16 @@ class WorkflowDNAExtractor:
                 if key not in invariant_keys:
                     continue
 
-                step_app_map[key] = evt.application or "Unknown"
+                step_app_map[key] = application_for_event(evt)
+
+                classified = classify_event(evt)
+                if classified:
+                    # The catalog parameters ARE the semantic content of a classified step;
+                    # raw URLs/titles would only duplicate (and leak) the same information.
+                    for param_name, value in classified.parameters.items():
+                        if value and value.strip():
+                            action_observations[(key, param_name)].append(value.strip())
+                    continue
 
                 # Check window_title in metadata
                 title = evt.metadata.get("window_title") or evt.metadata.get("title")
@@ -233,6 +253,29 @@ class WorkflowDNAExtractor:
                         pattern_template=pattern,
                     )
                 )
+
+        # Catalog action parameters are always surfaced (even when constant across sessions)
+        # because they are required inputs of an executable action. They are named after the
+        # catalog parameter so runtime inputs and executors agree on the name.
+        used_names = {v.parameter_name for v in variables}
+        for (step_key, param_name), values in sorted(action_observations.items()):
+            distinct_values = sorted(set(values))
+            name = param_name if param_name not in used_names else f"{param_name}_{var_counter}"
+            used_names.add(name)
+            var_counter += 1
+            variables.append(
+                VariableParameter(
+                    parameter_name=name,
+                    source_field=f"action.{param_name}",
+                    associated_step_key=step_key,
+                    associated_application=step_app_map.get(step_key, "Unknown"),
+                    observed_values=distinct_values,
+                    distinct_value_count=len(distinct_values),
+                    total_observations=len(values),
+                    variation_ratio=round(len(distinct_values) / len(values), 3),
+                    pattern_template=self._derive_pattern_template(distinct_values, param_name),
+                )
+            )
 
         return variables
 

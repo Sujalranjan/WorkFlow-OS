@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "WorkFlowOS Activity Observer",
+  "version": "1.0.0",
+  "description": "Reports Gmail searches, Gmail attachment downloads, Demo CRM lookups/updates and Slack sends to the local WorkFlowOS backend. Never reads email bodies, attachment contents or message text.",
+  "permissions": ["webNavigation", "downloads", "storage"],
+  "host_permissions": [
+    "https://mail.google.com/*",
+    "https://mail-attachment.googleusercontent.com/*",
+    "https://app.slack.com/*",
+    "http://127.0.0.1:8001/*",
+    "http://localhost:8001/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:8001/ui/*", "http://localhost:8001/ui/*"],
+      "js": ["crm_content.js"]
+    },
+    {
+      "matches": ["https://app.slack.com/*"],
+      "js": ["slack_content.js"]
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}

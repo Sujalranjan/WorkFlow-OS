@@ -10,6 +10,14 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class GmailAttachmentInfo(BaseModel):
+    """Attachment listing for a message (name and id only; never the content)."""
+    attachment_id: Optional[str] = Field(default=None, description="Gmail attachment ID")
+    filename: str = Field(..., description="Attachment filename")
+    mime_type: Optional[str] = Field(default=None, description="MIME type")
+    size_bytes: int = Field(default=0, description="Size in bytes")
+
+
 class GmailMessageSummary(BaseModel):
     """Privacy-preserving normalized summary of a single Gmail message.
 
@@ -22,6 +30,8 @@ class GmailMessageSummary(BaseModel):
     sender: Optional[str] = Field(default=None, description="Email sender From header")
     timestamp: Optional[str] = Field(default=None, description="Internal message timestamp or Date header")
     snippet: Optional[str] = Field(default=None, description="Brief preview snippet")
+    has_attachments: bool = Field(default=False, description="Whether the message has file attachments")
+    attachments: List[GmailAttachmentInfo] = Field(default_factory=list, description="Attachment names/ids (no content)")
 
 
 class GmailSearchResult(BaseModel):

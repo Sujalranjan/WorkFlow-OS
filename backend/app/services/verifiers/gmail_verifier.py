@@ -305,10 +305,14 @@ class GmailVerificationStrategy(BaseVerificationStrategy):
 
         if operation == "search_email" and query_actual is not None and total_found is not None:
             check.status = VerificationStatus.VERIFIED
+            selected_msg_id = output.get("selected_message_id")
+            selection_rule = output.get("selection_rule")
             check.actual_state = {
                 "operation": operation,
                 "query": query_actual,
                 "total_found": total_found,
+                "selected_message_id": selected_msg_id,
+                "selection_rule": selection_rule,
                 "status": "COMPLETED",
             }
             # Privacy: extract only message IDs, no personal body text
@@ -316,10 +320,13 @@ class GmailVerificationStrategy(BaseVerificationStrategy):
             check.evidence = {
                 "query": query_actual,
                 "total_found": total_found,
+                "selected_message_id": selected_msg_id,
+                "selection_rule": selection_rule,
                 "sample_message_ids": msg_ids,
                 "verified_at": check.checked_at,
             }
-            check.reason = f"Verified: Gmail API search for query '{query_actual}' returned {total_found} message summary record(s)."
+            rule_suffix = f" (Selected: {selected_msg_id} via {selection_rule})" if selected_msg_id else ""
+            check.reason = f"Verified: Gmail API search for query '{query_actual}' returned {total_found} message summary record(s){rule_suffix}."
         else:
             check.status = VerificationStatus.FAILED
             check.actual_state = output

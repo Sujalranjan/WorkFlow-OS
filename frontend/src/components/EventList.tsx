@@ -7,7 +7,9 @@ interface EventListProps {
   isLoading: boolean;
   error: string | null;
   onRefresh: () => void;
-  onSeedDemoActivity?: (scenario?: 'local_file_automation' | 'invoice_processing') => Promise<void>;
+  onSeedDemoActivity?: (
+    scenario?: 'local_file_automation' | 'invoice_processing' | 'observed_browser_routine'
+  ) => Promise<void>;
   isSeeding?: boolean;
   seedResult?: SeedActivityResponse | null;
   onNavigateToDiscover?: () => void;
@@ -82,6 +84,15 @@ export const EventList: React.FC<EventListProps> = ({
                 title="Populate SQLite event store with cross-app events for policy safety demo"
               >
                 ⚡ Multi-App Policy Trace
+              </button>
+              <button
+                type="button"
+                className="btn-seed-secondary"
+                onClick={() => onSeedDemoActivity('observed_browser_routine')}
+                disabled={isSeeding || isLoading}
+                title="Recorded browser sessions (Gmail search, attachment download, CRM update, Slack post) that discovery turns into an executable workflow"
+              >
+                ⚡ Observed Gmail → CRM → Slack
               </button>
             </div>
           )}

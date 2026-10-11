@@ -5,13 +5,14 @@ import json
 import sqlite3
 from datetime import datetime
 from typing import Generator, List, Optional
+from app.config import DATABASE_PATH
 from app.models.event import ActivityEvent, ActivityEventType
 
 
 class EventRepository:
     """Manages SQLite persistence for ActivityEvent entities."""
 
-    def __init__(self, db_path: str = "workflowos.db") -> None:
+    def __init__(self, db_path: str = DATABASE_PATH) -> None:
         self.db_path = db_path
         self._init_db()
 

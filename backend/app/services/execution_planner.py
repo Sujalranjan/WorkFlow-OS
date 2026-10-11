@@ -25,9 +25,16 @@ from app.models.execution_plan import (
     ResolvedParameter,
     StepExecutionStrategy,
 )
-
-
+from app.models.strategy import ExecutionStrategyType
+from app.services.action_catalog import CatalogAction, get_action, get_action_by_step_key
 from app.services.strategy_selector import StrategySelector
+
+
+def _catalog_param_name(source_field: str) -> Optional[str]:
+    """'action.search_query' -> 'search_query' (bindings extracted from catalog actions)."""
+    if source_field.startswith("action."):
+        return source_field.split(".", 1)[1]
+    return None
 
 
 class ExecutionPlanner:
@@ -110,9 +117,24 @@ class ExecutionPlanner:
             if val is None:
                 val = runtime_inputs.get(b.semantic_name)
 
+            catalog = get_action_by_step_key(b.associated_step_key)
+            param_name = _catalog_param_name(b.source_field)
+            catalog_param = catalog.parameter(param_name) if catalog and param_name else None
+            if val is None and param_name:
+                val = runtime_inputs.get(param_name)
+
             if val is not None and str(val).strip():
                 status = ParameterResolutionStatus.RESOLVED
                 runtime_val = str(val).strip()
+            elif catalog_param is not None and len(set(b.observed_values)) > 1:
+                # The value changed between observed runs, so a past sample would act on the
+                # wrong record. Derive it from upstream step outputs, or require runtime input.
+                if catalog_param.upstream_template:
+                    status = ParameterResolutionStatus.FROM_UPSTREAM
+                    runtime_val = catalog_param.upstream_template
+                else:
+                    status = ParameterResolutionStatus.UNRESOLVED
+                    runtime_val = None
             elif b.observed_values and len(b.observed_values) > 0:
                 # Fall back to observed sample value if available
                 status = ParameterResolutionStatus.DEFAULT_SAMPLE
@@ -130,7 +152,7 @@ class ExecutionPlanner:
                     sample_observed_values=list(b.observed_values),
                     runtime_value=runtime_val,
                     resolution_status=status,
-                    is_required=True,
+                    is_required=catalog_param.required if catalog_param else True,
                 )
             )
 
@@ -189,6 +211,33 @@ class ExecutionPlanner:
             expected_after_state=f"{step.action} completed in {app}",
         )
 
+    @staticmethod
+    def _catalog_step_parameters(
+        catalog: CatalogAction,
+        step_key: str,
+        spec: CanonicalWorkflowSpec,
+        resolved: List[ResolvedParameter],
+        runtime_inputs: Dict[str, str],
+    ) -> Dict[str, Optional[str]]:
+        """Bind each catalog parameter for one step: runtime input > resolved binding > upstream template."""
+        by_binding = {
+            (b.associated_step_key, _catalog_param_name(b.source_field)): r
+            for b, r in zip(spec.variables, resolved)
+        }
+        params: Dict[str, Optional[str]] = {}
+        for p in catalog.parameters:
+            runtime = runtime_inputs.get(p.name)
+            res = by_binding.get((step_key, p.name))
+            if runtime is not None and str(runtime).strip():
+                params[p.name] = str(runtime).strip()
+            elif res is not None:
+                params[p.name] = res.runtime_value
+            elif p.upstream_template:
+                params[p.name] = p.upstream_template
+            elif p.required:
+                params[p.name] = None
+        return params
+
     def evaluate_preconditions(self, preconditions: List[str]) -> List[PreconditionCheck]:
         """Evaluate structural preconditions, explicitly distinguishing satisfied from unknown."""
         checks: List[PreconditionCheck] = []
@@ -232,21 +281,46 @@ class ExecutionPlanner:
         # 2. Plan Steps with Strategies and Expected State Changes
         planned_steps: List[PlannedStep] = []
         expected_effects: List[ExpectedStateChange] = []
+        excluded_steps: List[Dict[str, str]] = []
+        has_catalog_steps = any(s.catalog_action for s in spec.steps)
 
-        for idx, step in enumerate(spec.steps, 1):
-            plan_step_id = f"plan-step-{idx}"
-            strategy = self.select_strategy(
-                app_name=step.application,
-                action=step.action,
-                risk_cat=step.risk.risk_category,
-            )
+        for step in spec.steps:
+            catalog = get_action(step.catalog_action)
+            if has_catalog_steps and catalog is None:
+                # Observational context (e.g. window focus) next to executable actions: there is
+                # nothing to perform, so it is recorded but not planned.
+                excluded_steps.append(
+                    {
+                        "canonical_step_id": step.canonical_step_id,
+                        "source_dna_step_key": step.source_dna_step_key,
+                        "reason": "Observational step with no ActionCatalog match; not executed.",
+                    }
+                )
+                continue
+
+            plan_step_id = f"plan-step-{len(planned_steps) + 1}"
+            step_params: Dict[str, Optional[str]] = {}
+            if catalog:
+                strategy = StepExecutionStrategy(
+                    strategy=ExecutionStrategy.API,
+                    reason=f"ActionCatalog '{catalog.action_id}' routes exactly to {catalog.executor_name}.",
+                    target_technology=catalog.executor_name,
+                )
+                step_params = self._catalog_step_parameters(
+                    catalog, step.source_dna_step_key, spec, resolved_params_list, runtime_inputs or {}
+                )
+            else:
+                strategy = self.select_strategy(
+                    app_name=step.application,
+                    action=step.action,
+                    risk_cat=step.risk.risk_category,
+                )
+                # Map parameters relevant to this step
+                for var_name in step.input_variables + step.output_variables:
+                    step_params[var_name] = resolved_param_map.get(var_name)
+
             state_change = self.build_expected_state_change(step, resolved_param_map)
             expected_effects.append(state_change)
-
-            # Map parameters relevant to this step
-            step_params: Dict[str, Optional[str]] = {}
-            for var_name in step.input_variables + step.output_variables:
-                step_params[var_name] = resolved_param_map.get(var_name)
 
             is_external = step.risk.risk_category in (RiskCategory.EXTERNAL_CHANGE, RiskCategory.COMMUNICATION)
 
@@ -266,14 +340,15 @@ class ExecutionPlanner:
                 requires_confirmation=step.risk.requires_confirmation,
                 evidence_reference=step.evidence_reference,
                 state_change=state_change,
+                catalog_action=step.catalog_action,
             )
 
             # Phase 10: Multi-strategy selection evaluation
             sel_res = self.strategy_selector.select_strategy(planned_step, spec)
             if sel_res.is_executable and sel_res.selected_strategy:
-                if sel_res.selected_strategy.value == "api_integration":
+                if sel_res.selected_strategy == ExecutionStrategyType.API_INTEGRATION:
                     planned_step.execution_strategy.strategy = ExecutionStrategy.API
-                elif sel_res.selected_strategy.value == "controlled_local":
+                elif sel_res.selected_strategy == ExecutionStrategyType.CONTROLLED_LOCAL:
                     planned_step.execution_strategy.strategy = ExecutionStrategy.CONTROLLED_LOCAL
             planned_step.execution_strategy.canonical_strategy = sel_res.selected_strategy.value if sel_res.selected_strategy else None
             planned_step.execution_strategy.selection_reason = sel_res.selection_reason
@@ -303,6 +378,7 @@ class ExecutionPlanner:
             boundaries=spec.boundaries,
             risk_assessment=spec.risk_assessment,
             expected_effects=expected_effects,
+            excluded_steps=excluded_steps,
             dry_run_status="not_started",
             dry_run_result=None,
         )

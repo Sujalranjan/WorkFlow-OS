@@ -80,7 +80,7 @@ A central architectural differentiator of WorkFlowOS is that **raw desktop event
 
 ### 1. Provider Abstraction
 The semantic layer interacts with LLMs exclusively through the `SemanticModelProvider` abstract base class:
-- `GeminiSemanticProvider`: Communicates with Google's Gemini models (`gemini-1.5-flash`) enforcing strict JSON output (`response_mime_type: "application/json"`).
+- `GeminiSemanticProvider`: Calls the Gemini REST API (model from `GEMINI_MODEL`) with JSON output mode (`responseMimeType: "application/json"`); the API key is sent in a header, never in the URL.
 - `MockSemanticProvider`: Deterministic, offline provider used for automated testing, fallback evaluation, and offline local development without API keys.
 
 ### 2. Prompt Contract & Strict JSON Schema
@@ -551,15 +551,49 @@ Zero full email bodies are stored. Zero access or refresh tokens are persisted i
 
 ---
 
-## What is NOT Implemented Yet (Phase 13+)
+## Action Catalog: Bridging Observation and Execution
 
-- **NO Gmail Mutation Operations**: No email sending, deleting, archiving, moving, labeling, or draft composition.
-- **NO CRM or Slack Integration**: Salesforce, HubSpot, and Slack integrations remain represented but unimplemented stubs.
-- **NO Browser Automation Engine**: No Playwright, Selenium, or Puppeteer automation.
-- **NO Desktop Input Automation**: No PyAutoGUI, mouse clicks, keyboard typing, or window hijacking.
-- **NO Autonomous Workflow Auto-Editing**: Workflow improvements require explicit human review and approval.
+Earlier phases produced DNA steps such as `google chrome:window_focused`. Those describe what was
+on screen but do not say what was done, so the executors could not run them. The hand-written
+Gmail -> CRM -> Slack spec (`phase16_workflow.py`) worked around this rather than solving it.
 
+`backend/app/services/action_catalog.py` closes the gap:
 
+1. **Catalog**: a fixed list of executable actions (`gmail.search_email`, `gmail.download_attachment`,
+   `crm.find_customer`, `crm.update_customer_record`, `slack.send_notification`). Each entry has an
+   exact executor name, a deterministic risk level and category, its parameters and its outputs.
+2. **Classification**: `classify_event()` maps an observed event to a catalog action using URL and
+   metadata rules (Gmail search fragment, Gmail-origin downloads, Demo CRM `/ui/customers/...` pages
+   and form posts, Slack channel sends). `step_key_for_event()` returns `gmail:search_email` for these
+   and `<app>:<event_type>` for everything else. Discovery and DNA extraction both use it.
+3. **DNA**: invariant and optional steps carry `catalog_action`. Catalog parameters become DNA
+   variables named after the parameter (`search_query`, `customer_query`, ...). Raw URLs of classified
+   steps are not duplicated as variables.
+4. **Semantics**: the prompt marks executable steps, and the validator rejects any interpretation that
+   drops one. The canonical factory takes action name, application and risk from the catalog, so LLM
+   wording cannot change routing.
+5. **Planning**: catalog steps are planned with their catalog parameters. Non-catalog steps in a
+   workflow that also has catalog steps are recorded in `excluded_steps`. A parameter that varied across
+   observed runs is never filled from a past sample: it resolves from upstream outputs
+   (`FROM_UPSTREAM`, e.g. `{customer_email}`) or stays `UNRESOLVED` until supplied at run time.
+6. **Routing**: `StrategySelector` sends a catalog step to the named executor only, and still applies
+   the implementation, risk-level and external-access policy checks.
+7. **Execution**: fail-closed on both FAILED and BLOCKED steps. Gmail sender headers are reduced to
+   the bare address before downstream steps use them.
 
+Observation sources:
 
+- `desktop-agent/browser_extension`: an MV3 extension that reports only Gmail search routes,
+  Gmail-origin downloads (origin and path only), Demo CRM pages and status submissions, and Slack send
+  events (channel id from the URL, never message text).
+- `WindowsWindowCollector` resolves browser windows to the web app they show (Gmail, CRM, Slack).
+- The Demo CRM serves a small browser UI at `/ui/customers`, so the CRM step can be done, and
+  observed, by hand.
 
+## Still Not Implemented
+
+- **No Gmail mutations**: no sending, deleting, archiving, moving or labeling.
+- **No general browser or desktop input automation**: execution only goes through catalog API executors
+  (plus the controlled local sandbox executor). No Playwright, Selenium or PyAutoGUI.
+- **Catalog coverage**: only the actions listed above are executable. Other observed activity is context.
+- **No autonomous workflow editing**: improvements require human review and approval.

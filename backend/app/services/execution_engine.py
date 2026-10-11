@@ -10,6 +10,7 @@ Responsible for:
 """
 
 from datetime import datetime, timezone
+from email.utils import parseaddr
 import logging
 import os
 from pathlib import Path
@@ -290,20 +291,27 @@ class ExecutionEngine:
 
                 # 2. Domain-specific parameter bindings
                 if act_norm == "search_email":
-                    messages = step_result.output.get("messages") or []
-                    if messages and isinstance(messages, list) and isinstance(messages[0], dict):
-                        first_msg = messages[0]
-                        msg_id = first_msg.get("message_id") or first_msg.get("id") or first_msg.get("msg_id")
+                    # Phase 19: Prioritize deterministically selected message, falling back to messages[0]
+                    sel_msg = step_result.output.get("selected_message")
+                    if not sel_msg:
+                        messages = step_result.output.get("messages") or []
+                        if messages and isinstance(messages, list) and isinstance(messages[0], dict):
+                            sel_msg = messages[0]
+
+                    if sel_msg and isinstance(sel_msg, dict):
+                        msg_id = sel_msg.get("message_id") or sel_msg.get("id") or sel_msg.get("msg_id")
                         if msg_id:
                             context.resolved_parameters["message_id"] = msg_id
                             context.resolved_parameters["msg_id"] = msg_id
-                        if first_msg.get("subject"):
-                            context.resolved_parameters["email_subject"] = first_msg.get("subject")
-                        sender = first_msg.get("sender") or first_msg.get("sender_email") or first_msg.get("from")
+                        if sel_msg.get("subject"):
+                            context.resolved_parameters["email_subject"] = sel_msg.get("subject")
+                        sender = sel_msg.get("sender") or sel_msg.get("sender_email") or sel_msg.get("from")
                         if sender:
-                            context.resolved_parameters["email"] = sender
-                            context.resolved_parameters["customer_email"] = sender
-                        attachments = first_msg.get("attachments") or []
+                            # 'Rahul Sharma <rahul@example.com>' -> 'rahul@example.com'
+                            sender_addr = parseaddr(str(sender))[1] or str(sender)
+                            context.resolved_parameters["email"] = sender_addr
+                            context.resolved_parameters["customer_email"] = sender_addr
+                        attachments = sel_msg.get("attachments") or []
                         if attachments and isinstance(attachments, list) and isinstance(attachments[0], dict):
                             context.resolved_parameters["attachment_id"] = attachments[0].get("id") or attachments[0].get("attachment_id")
                             context.resolved_parameters["filename"] = attachments[0].get("filename")
@@ -338,10 +346,15 @@ class ExecutionEngine:
                     if step_result.output.get("ts"):
                         context.resolved_parameters["slack_ts"] = step_result.output.get("ts")
 
-            # Fail-closed check
-            if step_result.status == ExecutionStepStatus.FAILED:
-                overall_status = ExecutionOverallStatus.FAILED
-                error_summary = f"Step {idx} ('{step.action}') failed: {step_result.error}"
+            # Fail-closed check: a failed OR blocked step (e.g. missing auth) stops the run, so later
+            # steps never act on outputs that were not produced.
+            if step_result.status in (ExecutionStepStatus.FAILED, ExecutionStepStatus.BLOCKED):
+                if step_result.status == ExecutionStepStatus.FAILED:
+                    overall_status = ExecutionOverallStatus.FAILED
+                    error_summary = f"Step {idx} ('{step.action}') failed: {step_result.error}"
+                else:
+                    overall_status = ExecutionOverallStatus.BLOCKED
+                    error_summary = f"Step {idx} ('{step.action}') blocked: {step_result.blocked_reason} - {step_result.error}"
 
                 # Mark remaining steps as SKIPPED
                 for remaining in plan.planned_steps[idx:]:
@@ -354,7 +367,7 @@ class ExecutionEngine:
                             executor_name="ExecutionEngine",
                             status=ExecutionStepStatus.SKIPPED,
                             parameters_used={},
-                            error="Skipped due to preceding step failure",
+                            error=f"Skipped due to preceding step {step_result.status.value.lower()}",
                             affected_resources=[],
                             start_time=datetime.now(timezone.utc).isoformat(),
                             end_time=datetime.now(timezone.utc).isoformat(),

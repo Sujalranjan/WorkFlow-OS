@@ -1,86 +1,96 @@
 # WorkFlowOS
 
-WorkFlowOS is an AI-powered desktop workflow automation system designed to observe routine digital tasks, identify repetitive patterns, understand user intent, generate structured workflows, obtain user approval, and execute workflows using the most reliable available mechanisms.
-
-> **Current Status**: Phase 12 (Real Gmail API Integration — Read-Only Search) completed. Implements the first real external execution integration in WorkFlowOS using the Gmail API. **Phase 12 implements one read-only Gmail API operation (`search_email`)**. WorkFlowOS does NOT fully automate Gmail: zero state mutations are supported (no email sending, deleting, archiving, moving, labeling, mark-as-read, or arbitrary attachment downloading). Execution is deterministically routed via `StrategySelector` (`API_INTEGRATION` &rarr; `GmailApiExecutor`), enforced by `ExecutionPolicyEngine` (mandatory human approval, strict parameter validation), authenticated using official Google OAuth 2.0 with the narrowest scope (`https://www.googleapis.com/auth/gmail.readonly`), and protected against credential leakage. Results are normalized (`GmailSearchResult`, `GmailMessageSummary`), deterministically verified by `GmailVerificationStrategy`, recorded in `ExecutionAuditRecord`, and consumed by Phase 11 `LearningEngine`. Demonstrates safe fail-closed behavior (`AUTHENTICATION_REQUIRED`, `INTEGRATION_UNAVAILABLE`) with zero fallback to local executors. Passes 153/153 automated tests.
-
----
-
-## Repository Structure
+WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first.
 
 ```
-WorkFlowOS/
-├── backend/          # FastAPI backend, SQLite, Discovery, DNA, SemanticEngine, CanonicalRepository, ExecutionEngine, VerificationEngine, StrategySelector, LearningEngine, GmailClient, & GmailApiExecutor
-├── desktop-agent/    # Desktop activity agent, Windows collectors, queue, & demo scripts (demo_phase8.py ... demo_phase12.py)
-├── frontend/         # React + TypeScript UI with Canonical Specification, Approval, Execution Plan, Verification, Strategy Selection, Learning View, & Gmail Integration Status
-├── workflows/        # Canonical workflow schema definitions
-├── docs/             # Architecture and development documentation
-├── tests/            # Automated test suite (153 automated tests across all phases)
-├── .env.example      # Configuration template
-├── .gitignore        # Git ignore rules
-└── README.md         # Project documentation
+Observe ──► Discover ──► DNA ──► Interpret ──► Spec + approval ──► Plan ──► Execute ──► Verify ──► Learn
+(agent +    (repeated    (what    (LLM, checked   (human must        (exact    (Gmail/    (independent  (reliability
+ browser     sessions)    stays/   against the     approve)           routing)  CRM/Slack)  re-checks)    profile)
+ extension)               varies)  DNA)
 ```
 
----
+## How observation becomes execution
+
+The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/services/action_catalog.py)) is the fixed list of actions WorkFlowOS can actually perform:
+
+| Catalog action | Observed as | Executor | Risk |
+|---|---|---|---|
+| `gmail.search_email` | Gmail search route `#search/<query>` | GmailApiExecutor (read-only) | low |
+| `gmail.download_attachment` | completed download from Gmail | GmailApiExecutor → sandbox | medium |
+| `crm.find_customer` | CRM page `/ui/customers/<id>` or `?q=` | CrmApiExecutor | low |
+| `crm.update_customer_record` | CRM form submit (status field) | CrmApiExecutor | high, confirmation required |
+| `slack.send_notification` | message sent in `app.slack.com/client/<team>/<channel>` | SlackApiExecutor | medium |
+
+- Events are classified deterministically (URL and metadata rules, with no LLM involved). A classified event becomes a DNA step such as `gmail:search_email` with `catalog_action` set. Its parameters (search query, customer, status, channel) become DNA variables.
+- The LLM only describes the workflow. It cannot rename, drop or re-route an executable step: the validator rejects output that omits one, and the spec takes action names and risk levels from the catalog.
+- Steps with no catalog match (for example window focus) stay in the spec as context. The plan records them as excluded and never executes them.
+- Parameters that changed between observed runs (such as the customer) are **never** filled in from a past run. They come from upstream outputs (`customer_query ← sender of the selected email`) or must be supplied at run time.
+- Each step is routed to exactly one named executor. Risk policy, the human approval gate and fail-closed execution still apply: a failed **or blocked** step stops the run.
+
+## Repository layout
+
+```
+backend/            FastAPI backend: pipeline services, executors, verifiers, Demo CRM (+ browser UI)
+desktop-agent/      Windows window/file collectors, event queue, demo scripts
+  browser_extension/  Chrome/Edge extension that reports Gmail/CRM/Slack actions
+frontend/           React + TypeScript dashboard
+tests/              pytest suite (isolated: never touches your databases or live services)
+docs/               Architecture and development notes
+```
 
 ## Quickstart
 
-### 1. Backend Service
 ```bash
-pip install -r backend/requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend
-```
-- Health endpoint: `http://127.0.0.1:8000/health`
-- Events endpoint: `http://127.0.0.1:8000/api/events`
-- Discovery endpoint: `http://127.0.0.1:8000/api/discovery/candidates`
-- Workflow DNA endpoint: `http://127.0.0.1:8000/api/workflows/dna`
-- Semantic Interpretation: `POST http://127.0.0.1:8000/api/workflows/{dna_id}/interpret`
-- Canonical Specification Creation: `POST http://127.0.0.1:8000/api/workflows/{semantic_workflow_id}/specification`
-- Approval endpoint: `POST http://127.0.0.1:8000/api/workflows/specifications/{workflow_id}/approve`
-- Execution Plan Creation: `POST http://127.0.0.1:8000/api/workflows/specifications/{workflow_id}/execution-plan`
-- Strategy Info for Plan: `GET http://127.0.0.1:8000/api/workflows/execution-plans/{execution_plan_id}/strategy`
-- Strategy Info for Execution: `GET http://127.0.0.1:8000/api/workflows/executions/{execution_id}/strategy`
-- Execute Approved Plan: `POST http://127.0.0.1:8000/api/workflows/execution-plans/{execution_plan_id}/execute`
-- Verification Trigger: `POST http://127.0.0.1:8000/api/workflows/executions/{execution_id}/verify`
-- Latest Verification for Execution: `GET http://127.0.0.1:8000/api/workflows/executions/{execution_id}/verification`
-- Specific Verification Run: `GET http://127.0.0.1:8000/api/workflows/verifications/{verification_run_id}`
-- Workflow Learning Profile: `GET http://127.0.0.1:8000/api/workflows/{workflow_id}/learning`
-- Workflow Learning Events: `GET http://127.0.0.1:8000/api/workflows/{workflow_id}/learning/events`
-- Refresh Workflow Learning: `POST http://127.0.0.1:8000/api/workflows/{workflow_id}/learning/refresh`
-
-### 2. Desktop Agent & Phase 12 / 12.1 Real Gmail API Demo
-```bash
-# Windows PowerShell
-$env:PYTHONPATH=".;backend;desktop-agent"
-
-# Run complete dual-path demo (Path A safe block + Path B live test)
-python desktop-agent/desktop_agent/demo_phase12.py
-
-# Or run the dedicated live Gmail verification runner
-python desktop-agent/desktop_agent/demo_phase12_live.py --query "from:me"
-```
-*(Demonstrates Path A: safe unauthenticated block with zero mutations and zero fallback, and Path B: real Gmail read when credentials exist or clean graceful skip).*
-
-For Phase 11 learning demo:
-```bash
-python desktop-agent/desktop_agent/demo_phase11.py
+pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
 ```
 
-### 3. Frontend Dashboard
+1. **Backend** (port 8000):
+   ```bash
+   python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend
+   ```
+2. **Demo CRM** (port 8001, API at `/api/crm`, browser UI at `http://127.0.0.1:8001/ui/customers`):
+   ```bash
+   python backend/app/crm_server.py
+   ```
+3. **Frontend**:
+   ```bash
+   cd frontend && npm install && npm run dev
+   ```
+4. **Observe real activity**
+   - Desktop agent (window focus and file events): `python -m desktop_agent.agent` with `PYTHONPATH=".;backend;desktop-agent"`.
+   - Browser extension: open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and pick `desktop-agent/browser_extension`. Its options page sets the backend URL.
+
+   Then do the routine by hand a few times (at least 2 sessions, separated by 2+ minutes of inactivity).
+
+No real activity yet? In the dashboard, click **⚡ Observed Gmail → CRM → Slack**, or call `POST /api/demo/seed-activity` with `{"scenario": "observed_browser_routine"}`. That loads three recorded sessions. Then go through Discovery → DNA → Interpret → Spec → Approve → Plan → Dry run.
+
+### Integrations
+
+| Service | Configure | Notes |
+|---|---|---|
+| Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
+| Gmail (read-only) | `credentials.json` (OAuth client) + `GMAIL_ENABLED=true` | Sign in: `python desktop-agent/desktop_agent/demo_phase12_live.py` (delete an expired `token.json` first) |
+| Slack | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` | Bot needs `chat:write` (+ `channels:history` for verification) |
+| CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
+
+Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json` or `token.json` (they are git-ignored).
+
+## Tests
+
 ```bash
-cd frontend
-npm install
-npm run dev
+# PowerShell: $env:PYTHONPATH=".;backend;desktop-agent"
+PYTHONPATH=".;backend;desktop-agent" pytest tests -q
 ```
 
-### 4. Running Tests
-```bash
-# Windows PowerShell
-$env:PYTHONPATH=".;backend;desktop-agent"
-pytest tests/ -v
-```
+Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 
-For more details on architecture and development, refer to:
-- [docs/architecture.md](file:///e:/WorkFlow%20OS/docs/architecture.md)
-- [docs/development.md](file:///e:/WorkFlow%20OS/docs/development.md)
+The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [phase16_workflow.py](backend/app/services/phase16_workflow.py), and then execute and verify it.
 
+## Adding a new executable action
+
+1. Add a `CatalogAction` to `ACTION_CATALOG` (executor name, risk, parameters, outputs).
+2. Teach `classify_event()` how the action looks when a person does it (URL pattern, download source, form submit).
+3. Make sure the executor declares the action in `supported_actions`. If needed, map its outputs to context keys in `ExecutionEngine`.
+4. Add a classification test and extend the recorded-session tests.
+
+More detail: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).

@@ -3,12 +3,14 @@ export type ExecutionStrategy =
   | 'application_integration'
   | 'accessibility_semantic_ui'
   | 'browser_automation'
-  | 'ui_fallback';
+  | 'ui_fallback'
+  | 'controlled_local';
 
 export type ParameterResolutionStatus =
   | 'resolved'
   | 'sample_fallback'
   | 'default_sample'
+  | 'from_upstream'
   | 'unresolved';
 
 export interface ResolvedParameter {
@@ -83,6 +85,8 @@ export interface PlannedStep {
   external_change: boolean;
   requires_confirmation: boolean;
   state_change: ExpectedStateChange;
+  /** ActionCatalog id (e.g. 'gmail.search_email'); routed to exactly one executor. */
+  catalog_action?: string | null;
 }
 
 export interface DryRunStepResult {
@@ -132,6 +136,8 @@ export interface ExecutionPlan {
     summary: string;
   };
   expected_effects: ExpectedStateChange[];
+  /** Observational steps (e.g. window focus) recorded in the spec but not executed. */
+  excluded_steps?: { canonical_step_id: string; source_dna_step_key: string; reason: string }[];
   dry_run_status: string;
   dry_run_result?: DryRunResult | null;
 }

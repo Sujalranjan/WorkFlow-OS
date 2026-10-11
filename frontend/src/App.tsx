@@ -50,6 +50,9 @@ export const App: React.FC = () => {
     'plan' | 'parameters' | 'strategies' | 'state_changes' | 'dry_run' | 'live_execution' | 'verification'
   >('plan');
 
+  // Dynamic Gmail Query (Phase 19)
+  const [activeGmailQuery, setActiveGmailQuery] = useState<string>('has:attachment');
+
   const [isEventsLoading, setIsEventsLoading] = useState<boolean>(false);
   const [isDiscoveryLoading, setIsDiscoveryLoading] = useState<boolean>(false);
   const [isDnaLoading, setIsDnaLoading] = useState<boolean>(false);
@@ -275,15 +278,20 @@ export const App: React.FC = () => {
     }
   }, [selectedPlanId]);
 
-  const handleCreateExecutionPlan = useCallback(async (workflowId: string) => {
+  const handleCreateExecutionPlan = useCallback(async (workflowId: string, customQuery?: string) => {
     setIsPlanLoading(true);
     try {
+      const queryToUse = customQuery !== undefined ? customQuery : activeGmailQuery;
+      const bodyPayload: Record<string, any> = { fallback_to_sample: true };
+      if (queryToUse && queryToUse.trim()) {
+        bodyPayload.runtime_parameters = { search_query: queryToUse.trim() };
+      }
       const response = await fetch(
         `${API_BASE}/api/workflows/specifications/${workflowId}/execution-plan`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fallback_to_sample: true }),
+          body: JSON.stringify(bodyPayload),
         }
       );
       if (!response.ok) {
@@ -300,7 +308,7 @@ export const App: React.FC = () => {
     } finally {
       setIsPlanLoading(false);
     }
-  }, []);
+  }, [activeGmailQuery]);
 
   const handleInterpret = useCallback(async (dnaId: string, providerType?: string) => {
     setInterpretingDnaId(dnaId);
@@ -904,6 +912,13 @@ export const App: React.FC = () => {
             {selectedExecutionPlan ? (
               <ExecutionPlanView
                 plan={selectedExecutionPlan}
+                activeGmailQuery={activeGmailQuery}
+                onReplanWithQuery={async (newQuery) => {
+                  setActiveGmailQuery(newQuery);
+                  if (selectedExecutionPlan.source_workflow_id) {
+                    await handleCreateExecutionPlan(selectedExecutionPlan.source_workflow_id, newQuery);
+                  }
+                }}
                 onDryRunComplete={(updated) => {
                   setExecutionPlans((prev) =>
                     prev.map((p) => (p.execution_plan_id === updated.execution_plan_id ? updated : p))
