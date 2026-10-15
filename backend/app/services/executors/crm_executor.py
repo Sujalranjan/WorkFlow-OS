@@ -36,6 +36,34 @@ from app.services.executors.base import BaseExecutor
 
 logger = logging.getLogger(__name__)
 
+# Inputs a person may supply when find_customer pauses for intervention.
+CUSTOMER_INTERVENTION_INPUTS = ["selected_customer_id", "customer_query"]
+_MAX_CANDIDATES = 10
+
+
+def _pick_customer(
+    customers: List[Dict[str, Any]],
+    query: Optional[Any],
+    email: Optional[Any],
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Return (customer, '') when the lookup identifies exactly one record, else (None, reason).
+
+    A fuzzy search hitting several records is only resolved when exactly one of them is an
+    exact email or customer-id match; anything else is ambiguous and must not be guessed.
+    """
+    if not customers:
+        return None, "NO_MATCH"
+    if len(customers) == 1:
+        return customers[0], ""
+    keys = {str(v).strip().lower() for v in (query, email) if v and str(v).strip()}
+    exact = [
+        c for c in customers
+        if str(c.get("email") or "").lower() in keys or str(c.get("customer_id") or "").lower() in keys
+    ]
+    if len(exact) == 1:
+        return exact[0], ""
+    return None, "MULTIPLE_MATCHES"
+
 
 class CrmApiExecutor(BaseExecutor):
     """Executor executing verified CRM operations via the CRM REST API client."""
@@ -236,6 +264,10 @@ class CrmApiExecutor(BaseExecutor):
                 end_time=datetime.now(timezone.utc).isoformat(),
             )
 
+        selected_id = resolved_params.get("selected_customer_id")
+        if selected_id and str(selected_id).strip():
+            return self._find_customer_by_id(step, str(selected_id).strip(), start_time)
+
         try:
             search_res = self.client.find_customer(
                 query=str(query).strip() if query else None,
@@ -263,7 +295,11 @@ class CrmApiExecutor(BaseExecutor):
                 total_found = 0
                 query_echo = str(query)
 
-            matched_customer = cust_dumps[0] if cust_dumps else None
+            matched_customer, ambiguity = _pick_customer(cust_dumps, query, email)
+            if matched_customer is None:
+                # Never guess which record to update: ask a person instead (PS condition:
+                # "if the customer cannot be found, stop the workflow and request user intervention").
+                return self._needs_customer_input(step, query_echo, cust_dumps, ambiguity, start_time)
 
             output = {
                 "operation": "find_customer",
@@ -320,6 +356,96 @@ class CrmApiExecutor(BaseExecutor):
                 start_time=start_time,
                 end_time=datetime.now(timezone.utc).isoformat(),
             )
+
+    def _needs_customer_input(
+        self,
+        step: PlannedStep,
+        query_echo: str,
+        customers: List[Dict[str, Any]],
+        ambiguity: str,
+        start_time: str,
+    ) -> ExecutionStepResult:
+        if ambiguity == "NO_MATCH":
+            reason = f"No CRM customer matched '{query_echo}'. Choose the customer or enter a different search."
+        else:
+            reason = (
+                f"{len(customers)} CRM customers matched '{query_echo}'. Choose which record this request is for."
+            )
+        candidates = [
+            {k: c.get(k) for k in ("customer_id", "name", "email", "company", "status")}
+            for c in customers[:_MAX_CANDIDATES]
+        ]
+        return ExecutionStepResult(
+            planned_step_id=step.plan_step_id,
+            action_name=step.action,
+            target_application=step.application,
+            strategy=self.strategy,
+            executor_name=self.name,
+            status=ExecutionStepStatus.NEEDS_INPUT,
+            parameters_used={"query": query_echo},
+            output={"operation": "find_customer", "query": query_echo, "total_found": len(customers)},
+            error=reason,
+            intervention={
+                "parameter": "customer",
+                "reason": reason,
+                "code": ambiguity,
+                "accepted_inputs": list(CUSTOMER_INTERVENTION_INPUTS),
+                "candidates": candidates,
+            },
+            selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
+            selection_reason=f"CRM lookup was not conclusive ({ambiguity}); paused for user intervention",
+            policy_decision="ALLOWED",
+            start_time=start_time,
+            end_time=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _find_customer_by_id(self, step: PlannedStep, customer_id: str, start_time: str) -> ExecutionStepResult:
+        """Exact lookup of a customer a person picked during intervention."""
+        try:
+            customer = self.client.get_customer(customer_id)
+        except Exception as e:
+            logger.error("CrmApiExecutor get_customer failed: %s", str(e))
+            return ExecutionStepResult(
+                planned_step_id=step.plan_step_id,
+                action_name=step.action,
+                target_application=step.application,
+                strategy=self.strategy,
+                executor_name=self.name,
+                status=ExecutionStepStatus.FAILED,
+                selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
+                error=f"CRM API get_customer error: {str(e)}",
+                start_time=start_time,
+                end_time=datetime.now(timezone.utc).isoformat(),
+            )
+        if customer is None:
+            return self._needs_customer_input(step, customer_id, [], "NO_MATCH", start_time)
+        cust = customer.model_dump() if hasattr(customer, "model_dump") else dict(customer)
+        return ExecutionStepResult(
+            planned_step_id=step.plan_step_id,
+            action_name=step.action,
+            target_application=step.application,
+            strategy=self.strategy,
+            executor_name=self.name,
+            status=ExecutionStepStatus.SUCCESS,
+            parameters_used={"selected_customer_id": customer_id},
+            output={
+                "operation": "find_customer",
+                "query": customer_id,
+                "total_found": 1,
+                "customers": [cust],
+                "customer": cust,
+                "matched_customer": cust,
+                "selected_by": "user_intervention",
+                "status": "COMPLETED",
+            },
+            affected_resources=[],
+            selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
+            selection_reason=f"Customer '{customer_id}' chosen by a person during intervention; fetched via CRM API",
+            fallback_used=False,
+            policy_decision="ALLOWED",
+            start_time=start_time,
+            end_time=datetime.now(timezone.utc).isoformat(),
+        )
 
     def _execute_update_customer(
         self,

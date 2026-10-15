@@ -99,8 +99,13 @@ class VerificationEngine:
         for step in plan.planned_steps:
             step_res = step_results_map.get(step.plan_step_id)
 
-            # Case A: Step was not executed (SKIPPED, BLOCKED, CANCELLED)
-            if not step_res or step_res.status in (ExecutionStepStatus.SKIPPED, ExecutionStepStatus.CANCELLED, ExecutionStepStatus.BLOCKED):
+            # Case A: Step was not executed (SKIPPED, BLOCKED, CANCELLED, or still waiting for input)
+            if not step_res or step_res.status in (
+                ExecutionStepStatus.SKIPPED,
+                ExecutionStepStatus.CANCELLED,
+                ExecutionStepStatus.BLOCKED,
+                ExecutionStepStatus.NEEDS_INPUT,
+            ):
                 status_val = step_res.status.value if step_res else "NOT_FOUND"
                 all_checks.append(
                     VerificationCheck(

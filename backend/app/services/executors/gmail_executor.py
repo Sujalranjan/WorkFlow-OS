@@ -35,6 +35,7 @@ from app.models.execution import (
     ExecutionStepStatus,
 )
 from app.models.execution_plan import ExecutionStrategy, PlannedStep
+from app.models.gmail import GmailSearchResult
 from app.models.strategy import ExecutionStrategyType, ExecutorCapability
 from app.services.executors.base import BaseExecutor
 from app.services.gmail_client import (
@@ -479,13 +480,25 @@ class GmailApiExecutor(BaseExecutor):
 
         try:
             max_results = int(resolved_params.get("max_results", 10))
-            search_result = self.client.search_messages(query=query_str, max_results=max_results)
+            pinned_id = str(resolved_params.get("trigger_message_id") or "").strip()
+            if pinned_id:
+                # A trigger already matched this exact message: fetch it by id instead of
+                # re-searching, so the run can never drift to a newer email matching the query.
+                pinned = self.client.get_message_summary(pinned_id)
+                search_result = GmailSearchResult(query=query_str, total_found=1, messages=[pinned])
+                selected_msg, selection_rule, selection_reason = (
+                    pinned,
+                    "TRIGGER_MESSAGE",
+                    f"Run was started by email trigger for message id={pinned_id}; that exact message is used.",
+                )
+            else:
+                search_result = self.client.search_messages(query=query_str, max_results=max_results)
 
-            # Deterministic Message Selection
-            selected_msg, selection_rule, selection_reason = select_deterministic_message(
-                messages=search_result.messages,
-                query=query_str,
-            )
+                # Deterministic Message Selection
+                selected_msg, selection_rule, selection_reason = select_deterministic_message(
+                    messages=search_result.messages,
+                    query=query_str,
+                )
 
             selected_dict = (
                 selected_msg.model_dump()

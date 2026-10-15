@@ -14,12 +14,18 @@ import { ExecutionPlanView } from './components/ExecutionPlanView';
 import { WorkflowLearningView } from './components/WorkflowLearningView';
 import { PipelineNav, PipelineStageId, StageInfo, StageState } from './components/PipelineNav';
 import { DemoHeader } from './components/DemoHeader';
+import { AutomationsView } from './components/AutomationsView';
+import { listRuns } from './services/automation';
 import { GuidedDemoPanel, DemoTrackId } from './components/GuidedDemoPanel';
 import { seedDemoActivity, resetDemoState, seedE2EWorkflow, SeedActivityResponse } from './services/api';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
+type AppView = 'pipeline' | 'automations';
+
 export const App: React.FC = () => {
+  const [view, setView] = useState<AppView>('pipeline');
+  const [inboxCount, setInboxCount] = useState<number>(0);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -63,6 +69,21 @@ export const App: React.FC = () => {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [dnaError, setDnaError] = useState<string | null>(null);
+
+  // Count of triggered runs waiting for approval or input (navbar badge)
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      listRuns(['PENDING_APPROVAL', 'NEEDS_INPUT'], 200)
+        .then((runs) => !cancelled && setInboxCount(runs.length))
+        .catch(() => undefined);
+    load();
+    const id = window.setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [view]);
 
   // Keep first candidate selected by default if available
   useEffect(() => {
@@ -627,9 +648,32 @@ export const App: React.FC = () => {
           <div className="brand-icon">W</div>
           <span className="brand-title">WorkFlowOS</span>
         </div>
-        <div className="nav-phase-badge">Phase 15: Hackathon Demo Packaging</div>
+        <div className="nav-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={view === 'pipeline'}
+            className={`nav-tab ${view === 'pipeline' ? 'nav-tab-active' : ''}`}
+            onClick={() => setView('pipeline')}
+          >
+            Pipeline
+          </button>
+          <button
+            role="tab"
+            aria-selected={view === 'automations'}
+            className={`nav-tab ${view === 'automations' ? 'nav-tab-active' : ''}`}
+            onClick={() => setView('automations')}
+          >
+            Automations
+            {inboxCount > 0 && <span className="nav-tab-count">{inboxCount}</span>}
+          </button>
+        </div>
       </nav>
 
+      {view === 'automations' ? (
+        <main className="main-content">
+          <AutomationsView specifications={specifications} />
+        </main>
+      ) : (
       <main className="main-content">
         {/* Top-Level Demo Header with Capability Transparency */}
         <DemoHeader
@@ -972,6 +1016,7 @@ export const App: React.FC = () => {
           />
         </section>
       </main>
+      )}
 
       <footer className="footer">
         WorkFlowOS &mdash; Phase 13.1 Unified Workflow Pipeline UI Shell &bull; Controlled Local Sandbox &amp; Read-Only Gmail API

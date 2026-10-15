@@ -81,7 +81,14 @@ ACTION_CATALOG: Dict[str, CatalogAction] = {
             risk_level=RiskLevel.LOW,
             risk_category=RiskCategory.READ_ONLY,
             risk_reason="Read-only Gmail search; no mailbox state is modified.",
-            parameters=(CatalogParameter("search_query", "Gmail search query, e.g. 'has:attachment subject:invoice'"),),
+            parameters=(
+                CatalogParameter("search_query", "Gmail search query, e.g. 'has:attachment subject:invoice'"),
+                CatalogParameter(
+                    "trigger_message_id",
+                    "Gmail message id supplied by an email trigger; pins the run to that exact email",
+                    required=False,
+                ),
+            ),
             produces=("message_id", "email_subject", "customer_email", "attachment_id", "filename"),
         ),
         CatalogAction(

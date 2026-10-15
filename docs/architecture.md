@@ -590,6 +590,49 @@ Observation sources:
 - The Demo CRM serves a small browser UI at `/ui/customers`, so the CRM step can be done, and
   observed, by hand.
 
+## Email Triggers, Per-Run Approval and Intervention
+
+An approved workflow that starts with `gmail.search_email` can be attached to an **email trigger**
+(`backend/app/services/trigger_service.py`). This is the "Trigger: new customer request received in
+Gmail" part of the workflow; nothing runs without a person deciding.
+
+```
+TriggerScheduler (asyncio, every TRIGGER_POLLER_TICK_SECONDS)
+  └─ TriggerService.poll_due() ── per trigger, at most every poll_interval_seconds (min 30s)
+        Gmail messages.list  q="(<trigger query>) after:<active_since>"   (gmail.readonly)
+        new message id? ──► WorkflowRun(PENDING_APPROVAL)      ← workflow_runs is the ledger:
+                                                                  UNIQUE(trigger_id, message_id)
+Inbox (UI / API)
+  approve ──► ExecutionPlanner(search_query, trigger_message_id)
+          ──► ExecutionEngine.execute_plan (LIVE, idempotency key = run id)
+          ──► VerificationEngine ──► LearningEngine
+  NEEDS_INPUT ──► person supplies a value ──► ExecutionEngine.resume_execution (same execution)
+```
+
+- **Polling, not push.** Gmail is checked on an interval with the existing read-only client. There is no
+  Pub/Sub push and no Gmail History API: query polling plus a local ledger is simpler, matches the
+  trigger's query exactly and needs no extra Google Cloud setup. New emails are noticed within roughly
+  one interval, not instantly.
+- **Only new email.** `active_since` (the trigger's creation time, or an explicit look-back chosen when
+  creating it) keeps an existing inbox from flooding the approval queue.
+- **Pinned to its email.** The run passes `trigger_message_id` to `search_email`, which then fetches that
+  exact message (`GmailApiClient.get_message_summary`) instead of re-searching. The selection rule is
+  recorded as `TRIGGER_MESSAGE`, and the attachment download consumes that message id.
+- **Two approvals.** The workflow specification must be APPROVED to create a trigger, to plan a run and
+  to resume one. Each run is also approved individually. Moving a run out of `PENDING_APPROVAL` is a
+  single conditional SQL update, so a double click or two operators cannot execute it twice (and Slack
+  cannot be notified twice).
+- **Needs intervention.** `find_customer` no longer guesses. No CRM match, or several matches without
+  exactly one exact email/id match, returns step status `NEEDS_INPUT` with the reason and up to 10
+  candidates. The engine stops there without skipping later steps, stores the paused step index and the
+  parameters gathered so far on the execution record, and `resume_execution` continues the **same**
+  execution from that step once a person picks a customer (`selected_customer_id`, exact lookup) or gives
+  a new search (`customer_query`). Only inputs the paused step declared are accepted, and approval and
+  plan policy are re-checked before resuming. Both attempts stay in the audit record. Rejecting a paused
+  run cancels its execution.
+- **Run lifecycle:** `PENDING_APPROVAL → RUNNING → (NEEDS_INPUT ⇄ RUNNING) → COMPLETED | FAILED |
+  BLOCKED`, or `REJECTED`. A run never stays in `RUNNING` after an error; failures are recorded on it.
+
 ## Still Not Implemented
 
 - **No Gmail mutations**: no sending, deleting, archiving, moving or labeling.

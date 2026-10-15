@@ -37,6 +37,8 @@ os.environ["CRM_DATABASE_PATH"] = os.path.join(_TEST_DATA_DIR, "crm_test.db")
 os.environ["WORKFLOWOS_SANDBOX_DIR"] = os.path.join(_TEST_DATA_DIR, "sandbox")
 # Prevent app.config from re-reading the developer's .env and overriding the above.
 os.environ["WORKFLOWOS_SKIP_DOTENV"] = "1"
+# Tests drive trigger polling explicitly; never start the background poller.
+os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 
 if not LIVE_TESTS:
     for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"):

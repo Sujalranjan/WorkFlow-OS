@@ -1,7 +1,10 @@
 """FastAPI application factory and instance."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.automation import get_trigger_service, router as automation_router
 from app.api.canonical import router as canonical_router
 from app.api.crm import router as crm_router
 from app.api.demo import router as demo_router
@@ -12,7 +15,21 @@ from app.api.execution import router as execution_router
 from app.api.health import router as health_router
 from app.api.learning import router as learning_router
 from app.api.semantic import router as semantic_router
-from app.config import PROJECT_NAME, VERSION
+from app.config import PROJECT_NAME, TRIGGER_POLLER_ENABLED, TRIGGER_POLLER_TICK_SECONDS, VERSION
+from app.services.trigger_scheduler import TriggerScheduler
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = None
+    if TRIGGER_POLLER_ENABLED:
+        scheduler = TriggerScheduler(get_trigger_service(), tick_seconds=TRIGGER_POLLER_TICK_SECONDS)
+        scheduler.start()
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            await scheduler.stop()
 
 
 def create_app() -> FastAPI:
@@ -21,6 +38,7 @@ def create_app() -> FastAPI:
         title=PROJECT_NAME,
         version=VERSION,
         description="WorkFlowOS Backend Service",
+        lifespan=lifespan,
     )
 
     # Enable CORS for local frontend communication
@@ -43,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(crm_router)
     app.include_router(execution_router)
     app.include_router(learning_router)
+    app.include_router(automation_router)
 
     return app
 

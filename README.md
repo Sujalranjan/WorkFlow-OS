@@ -1,6 +1,6 @@
 # WorkFlowOS
 
-WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first.
+WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
 
 ```
 Observe ──► Discover ──► DNA ──► Interpret ──► Spec + approval ──► Plan ──► Execute ──► Verify ──► Learn
@@ -63,6 +63,16 @@ pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
    Then do the routine by hand a few times (at least 2 sessions, separated by 2+ minutes of inactivity).
 
 No real activity yet? In the dashboard, click **⚡ Observed Gmail → CRM → Slack**, or call `POST /api/demo/seed-activity` with `{"scenario": "observed_browser_routine"}`. That loads three recorded sessions. Then go through Discovery → DNA → Interpret → Spec → Approve → Plan → Dry run.
+
+### Automate it: email triggers
+
+Once a workflow that starts with a Gmail search is approved, open the **Automations** tab and create an email trigger with a Gmail query (for example `subject:"Customer Replacement Request" has:attachment`).
+
+- While the backend runs, it checks Gmail on the trigger's interval (default 60 s, minimum 30 s; read-only). Every new matching email appears in the **Inbox** as a run waiting for approval. Nothing runs until you approve it.
+- **Approve & run** executes the workflow for that exact email: the attachment download uses that email's message id, never "the newest match". The run is then verified and fed into the reliability profile.
+- If the CRM has no customer for the sender, or several possible ones, the run **pauses** and asks you to pick the customer. It then continues from that step. **Cancel run** stops it instead.
+- **Check now** polls immediately. A trigger only considers emails received after it was created, unless you choose a look-back window.
+- API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Set `TRIGGER_POLLER_ENABLED=false` to turn off background polling.
 
 ### Integrations
 

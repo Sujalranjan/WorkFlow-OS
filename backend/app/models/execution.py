@@ -43,6 +43,7 @@ class ExecutionStepStatus(str, Enum):
     BLOCKED = "BLOCKED"
     SKIPPED = "SKIPPED"
     CANCELLED = "CANCELLED"
+    NEEDS_INPUT = "NEEDS_INPUT"
 
     @classmethod
     def _missing_(cls, value: object) -> Optional["ExecutionStepStatus"]:
@@ -61,6 +62,7 @@ class ExecutionOverallStatus(str, Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
     BLOCKED = "BLOCKED"
+    NEEDS_INPUT = "NEEDS_INPUT"
 
     @classmethod
     def _missing_(cls, value: object) -> Optional["ExecutionOverallStatus"]:
@@ -93,6 +95,10 @@ class ExecutionStepResult(BaseModel):
     fallback_used: bool = Field(default=False, description="Whether fallback selection was used")
     policy_decision: Optional[str] = Field(default=None, description="Policy check outcome: ALLOWED or BLOCKED")
     blocked_reason: Optional[str] = Field(default=None, description="Standardized block reason if step was not executable")
+    intervention: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Set when status is NEEDS_INPUT: {'parameter', 'reason', 'candidates'} describing what a person must supply",
+    )
 
 
 
@@ -133,6 +139,13 @@ class ExecutionAuditRecord(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, description="Client or plan idempotency token")
     verification_status: Optional[str] = Field(default=None, description="Aggregated verification status (VERIFIED, FAILED, UNKNOWN, NOT_APPLICABLE)")
     verification_id: Optional[str] = Field(default=None, description="Linked VerificationResult ID")
+    paused_step_index: Optional[int] = Field(
+        default=None, description="0-based index of the planned step awaiting input when status is NEEDS_INPUT"
+    )
+    runtime_context: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters and upstream outputs gathered so far; persisted so a paused run can resume",
+    )
 
 
 class ExecutePlanRequest(BaseModel):

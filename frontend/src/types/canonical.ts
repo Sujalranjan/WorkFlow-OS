@@ -78,6 +78,7 @@ export interface CanonicalStep {
   risk: StepRisk;
   occurrence_ratio: number;
   classification: string;
+  catalog_action?: string | null;
 }
 
 export interface CanonicalOptionalStep {

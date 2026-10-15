@@ -248,44 +248,12 @@ class GmailApiClient:
             )
 
             raw_messages = list_res.get("messages", [])
-            normalized_list: List[GmailMessageSummary] = []
 
             # 2. Retrieve metadata for each message
-            for msg_item in raw_messages:
-                msg_id = msg_item.get("id")
-                thread_id = msg_item.get("threadId", "")
-
-                # format=full with a field mask: returns headers and the attachment
-                # listing (filename/id/size) but never body or attachment data.
-                msg_data = (
-                    service.users()
-                    .messages()
-                    .get(userId="me", id=msg_id, format="full", fields=_SUMMARY_FIELDS)
-                    .execute()
-                )
-
-                # Extract headers safely
-                payload = msg_data.get("payload", {})
-                headers = payload.get("headers", [])
-                header_map = {
-                    h.get("name", "").lower(): h.get("value", "")
-                    for h in headers
-                    if h.get("name", "").lower() in ("subject", "from", "date")
-                }
-                attachments = _list_attachments(payload)
-
-                normalized_list.append(
-                    GmailMessageSummary(
-                        message_id=msg_id,
-                        thread_id=thread_id,
-                        subject=header_map.get("subject", "(No Subject)"),
-                        sender=header_map.get("from", "(Unknown Sender)"),
-                        timestamp=header_map.get("date") or msg_data.get("internalDate"),
-                        snippet=msg_data.get("snippet", ""),
-                        has_attachments=bool(attachments),
-                        attachments=attachments,
-                    )
-                )
+            normalized_list: List[GmailMessageSummary] = [
+                self._summarize(service, msg_item.get("id"), msg_item.get("threadId", ""))
+                for msg_item in raw_messages
+            ]
 
             return GmailSearchResult(
                 query=query.strip(),
@@ -299,6 +267,49 @@ class GmailApiClient:
         except Exception as e:
             logger.error("Gmail search API call failed: %s", str(e))
             raise GmailApiError(f"Gmail search API error: {str(e)}") from e
+
+    @staticmethod
+    def _summarize(service: Any, msg_id: str, thread_id: str = "") -> GmailMessageSummary:
+        """Fetch one message's headers and attachment listing (never body or attachment data)."""
+        # format=full with a field mask: returns headers and the attachment
+        # listing (filename/id/size) but never body or attachment data.
+        msg_data = (
+            service.users()
+            .messages()
+            .get(userId="me", id=msg_id, format="full", fields=_SUMMARY_FIELDS)
+            .execute()
+        )
+        payload = msg_data.get("payload", {})
+        headers = payload.get("headers", [])
+        header_map = {
+            h.get("name", "").lower(): h.get("value", "")
+            for h in headers
+            if h.get("name", "").lower() in ("subject", "from", "date")
+        }
+        attachments = _list_attachments(payload)
+        return GmailMessageSummary(
+            message_id=msg_id,
+            thread_id=thread_id or msg_data.get("threadId", ""),
+            subject=header_map.get("subject", "(No Subject)"),
+            sender=header_map.get("from", "(Unknown Sender)"),
+            timestamp=header_map.get("date") or msg_data.get("internalDate"),
+            snippet=msg_data.get("snippet", ""),
+            has_attachments=bool(attachments),
+            attachments=attachments,
+        )
+
+    def get_message_summary(self, message_id: str) -> GmailMessageSummary:
+        """Read-only metadata for one message by Gmail id (used to pin a triggered run to its email)."""
+        if not message_id or not str(message_id).strip():
+            raise ValueError("message_id cannot be empty")
+        service = self.get_service()
+        try:
+            return self._summarize(service, str(message_id).strip())
+        except (GmailConfigurationError, GmailAuthenticationError):
+            raise
+        except Exception as e:
+            logger.error("Gmail get message API call failed: %s", str(e))
+            raise GmailApiError(f"Gmail get message API error: {str(e)}") from e
 
     def get_message_attachments(self, message_id: str) -> List[Dict[str, Any]]:
         """Retrieves metadata of attachments associated with a message.

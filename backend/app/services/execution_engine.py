@@ -11,10 +11,11 @@ Responsible for:
 
 from datetime import datetime, timezone
 from email.utils import parseaddr
+import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import uuid
 
 from app.models.canonical import ApprovalState, CanonicalWorkflowSpec
@@ -151,13 +152,96 @@ class ExecutionEngine:
             dry_run=(execution_mode == ExecutionMode.DRY_RUN),
         )
 
-        # 6. Step-by-Step Fail-Closed Execution Loop with Strategy Selection
+        return self._run_steps(plan, spec, context, audit_record, start_index=0)
+
+    def resume_execution(
+        self,
+        execution_id: str,
+        inputs: Dict[str, str],
+        resumed_by: str = "operator",
+    ) -> ExecutionAuditRecord:
+        """Continue a NEEDS_INPUT execution from its paused step with the values a person supplied.
+
+        Approval and plan-level policy are re-checked, so a workflow that was rejected or
+        changed while the run was paused cannot continue.
+        """
+        record = self.exec_repo.get_by_id(execution_id)
+        if not record:
+            raise ValueError(f"Execution '{execution_id}' not found.")
+        if record.status != ExecutionOverallStatus.NEEDS_INPUT or record.paused_step_index is None:
+            raise ValueError(
+                f"Execution '{execution_id}' is {record.status.value}; only NEEDS_INPUT executions can be resumed."
+            )
+        clean_inputs = {k: str(v).strip() for k, v in (inputs or {}).items() if v is not None and str(v).strip()}
+        if not clean_inputs:
+            raise ValueError("Resume requires at least one non-empty input value.")
+
+        plan = self.plan_repo.get_by_id(record.execution_plan_id)
+        if not plan:
+            raise ValueError(f"Execution plan '{record.execution_plan_id}' not found.")
+        spec = self.canonical_repo.get_by_id(plan.source_workflow_id)
+        if not spec:
+            raise ValueError(f"Source canonical workflow specification '{plan.source_workflow_id}' not found.")
+        is_plan_valid, plan_violations = self.policy_engine.validate_plan_execution(spec, plan)
+        if not is_plan_valid:
+            raise ValueError(f"Resume rejected by security policy: {'; '.join(plan_violations)}")
+
+        paused_step = plan.planned_steps[record.paused_step_index]
+        allowed = set(self._intervention_parameters(record, paused_step.plan_step_id))
+        unexpected = sorted(set(clean_inputs) - allowed)
+        if unexpected:
+            raise ValueError(
+                f"Inputs {unexpected} are not accepted by step '{paused_step.action}'. Allowed: {sorted(allowed)}"
+            )
+
+        context = ExecutionContext(
+            execution_id=record.execution_id,
+            workflow_id=record.workflow_id,
+            workflow_version=record.workflow_version,
+            execution_plan_id=record.execution_plan_id,
+            resolved_parameters={**record.runtime_context, **clean_inputs},
+            sandbox_root=record.sandbox_root,
+            execution_mode=record.execution_mode,
+            current_step_number=record.paused_step_index + 1,
+            execution_start_time=record.start_time,
+            dry_run=(record.execution_mode == ExecutionMode.DRY_RUN),
+        )
+        # The person's answer replaces the paused step's own binding (e.g. the {customer_email} template).
+        paused_step.resolved_parameters = {**(paused_step.resolved_parameters or {}), **clean_inputs}
+
+        record.status = ExecutionOverallStatus.RUNNING
+        record.error_summary = None
+        record.end_time = None
+        self.exec_repo.save(record)
+        logger.info("Resuming execution %s at step %s (by %s)", execution_id, record.paused_step_index + 1, resumed_by)
+        return self._run_steps(plan, spec, context, record, start_index=record.paused_step_index)
+
+    @staticmethod
+    def _intervention_parameters(record: ExecutionAuditRecord, plan_step_id: str) -> List[str]:
+        """Inputs the paused step declared it accepts (from its NEEDS_INPUT intervention)."""
+        for res in reversed(record.step_results):
+            if res.planned_step_id == plan_step_id and res.status == ExecutionStepStatus.NEEDS_INPUT:
+                return list((res.intervention or {}).get("accepted_inputs") or [])
+        return []
+
+    def _run_steps(
+        self,
+        plan: ExecutionPlan,
+        spec: CanonicalWorkflowSpec,
+        context: ExecutionContext,
+        audit_record: ExecutionAuditRecord,
+        start_index: int,
+    ) -> ExecutionAuditRecord:
+        """Step-by-step fail-closed execution loop with strategy selection, from `start_index` (0-based)."""
         overall_status = ExecutionOverallStatus.COMPLETED
         error_summary: Optional[str] = None
-        executed_steps: List[ExecutionStepResult] = []
-        all_affected: List[str] = []
+        executed_steps: List[ExecutionStepResult] = list(audit_record.step_results)
+        all_affected: List[str] = list(audit_record.affected_resources)
+        paused_step_index: Optional[int] = None
 
         for idx, step in enumerate(plan.planned_steps, 1):
+            if idx - 1 < start_index:
+                continue
             context.current_step_number = idx
 
             # Phase 10: Deterministic Strategy Selection & Capability Evaluation
@@ -346,6 +430,16 @@ class ExecutionEngine:
                     if step_result.output.get("ts"):
                         context.resolved_parameters["slack_ts"] = step_result.output.get("ts")
 
+            # Human intervention: the step could not decide safely on its own (e.g. no CRM customer,
+            # or several). Pause here; remaining steps are neither run nor skipped, so the run can
+            # resume from this step once a person supplies the missing input.
+            if step_result.status == ExecutionStepStatus.NEEDS_INPUT:
+                overall_status = ExecutionOverallStatus.NEEDS_INPUT
+                paused_step_index = idx - 1
+                reason = (step_result.intervention or {}).get("reason") or step_result.error
+                error_summary = f"Step {idx} ('{step.action}') needs input: {reason}"
+                break
+
             # Fail-closed check: a failed OR blocked step (e.g. missing auth) stops the run, so later
             # steps never act on outputs that were not produced.
             if step_result.status in (ExecutionStepStatus.FAILED, ExecutionStepStatus.BLOCKED):
@@ -375,14 +469,28 @@ class ExecutionEngine:
                     )
                 break
 
-        # 7. Finalize and Persist Execution Audit Record
-
-
+        # 7. Finalize and persist the execution audit record
         audit_record.status = overall_status
         audit_record.step_results = executed_steps
         audit_record.affected_resources = all_affected
         audit_record.error_summary = error_summary
-        audit_record.end_time = datetime.now(timezone.utc).isoformat()
+        audit_record.paused_step_index = paused_step_index
+        audit_record.runtime_context = _json_safe(context.resolved_parameters)
+        audit_record.end_time = (
+            None if overall_status == ExecutionOverallStatus.NEEDS_INPUT else datetime.now(timezone.utc).isoformat()
+        )
 
         self.exec_repo.save(audit_record)
         return audit_record
+
+
+def _json_safe(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only JSON-serializable context values so the paused context can be persisted."""
+    safe: Dict[str, Any] = {}
+    for k, v in params.items():
+        try:
+            json.dumps(v)
+        except (TypeError, ValueError):
+            continue
+        safe[k] = v
+    return safe
