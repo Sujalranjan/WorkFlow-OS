@@ -1,4 +1,4 @@
-"""Canonical Workflow Specification Factory (Phase 6).
+"""Canonical Workflow Specification Factory.
 
 Assembles the formal, executable-ready CanonicalWorkflowSpec from:
 1. Deterministic structural WorkflowDNA (invariants, ordering, evidence, boundaries)

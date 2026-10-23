@@ -1,4 +1,4 @@
-"""Tests for Workflow DNA Extractor (Phase 4).
+"""Tests for Workflow DNA Extractor.
 
 Validates:
 - Case A: Invariants (steps appearing across 100% of sessions)

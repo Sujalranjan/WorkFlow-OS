@@ -1,4 +1,4 @@
-"""Integration tests for Workflow DNA API endpoints (Phase 4)."""
+"""Integration tests for Workflow DNA API endpoints."""
 
 import os
 import tempfile

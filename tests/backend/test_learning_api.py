@@ -1,4 +1,4 @@
-"""API Integration Tests for Phase 11: Workflow Learning & Reliability Endpoints.
+"""API Integration Tests: Workflow Learning & Reliability Endpoints.
 
 Tests:
 - GET /api/workflows/{workflow_id}/learning

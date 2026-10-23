@@ -1,4 +1,4 @@
-"""Integration tests for Phase 7 Execution API endpoints:
+"""Integration tests Execution API endpoints:
 - POST /api/workflows/specifications/{workflow_id}/execution-plan
 - GET /api/workflows/execution-plans
 - GET /api/workflows/execution-plans/{execution_plan_id}

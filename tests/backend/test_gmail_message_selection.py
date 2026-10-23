@@ -1,4 +1,4 @@
-"""Phase 19: Dynamic Gmail Message Selection Tests.
+"""Dynamic Gmail Message Selection Tests.
 
 Verifies deterministic Gmail message selection for presentation live demos:
 1. Default query behavior: 'has:attachment' is preserved and deterministically selects newest.
@@ -15,7 +15,7 @@ Verifies deterministic Gmail message selection for presentation live demos:
 7. Attachment download using selected message: Step 2 uses the exact message_id and attachment metadata.
 8. Dry-run zero mutation: Simulation performs 0 real external API calls and returns simulated selected email.
 9. Mandatory approval gate: Unapproved workflow rejects execution plan creation and live execution.
-10. Full Track C regression: Complete workflow (search -> attachment -> CRM -> CRM update -> Slack -> verify -> learn)
+10. Full reference-workflow regression: Complete workflow (search -> attachment -> CRM -> CRM update -> Slack -> verify -> learn)
     executes reliably with dynamic runtime Gmail query.
 """
 
@@ -82,7 +82,7 @@ from app.services.executors.gmail_executor import (
 from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.gmail_client import GmailApiClient
 from app.services.learning_engine import LearningEngine
-from app.services.phase16_workflow import Phase16Orchestrator, build_phase16_canonical_spec
+from app.services.reference_workflow import WorkflowOrchestrator, build_reference_spec
 from app.services.slack_client import SlackApiClient
 from app.services.verification_engine import VerificationEngine
 from app.services.verifiers.crm_verifier import CrmVerificationStrategy
@@ -267,7 +267,7 @@ def test_select_deterministic_message_default_query():
 def test_execution_plan_parameter_resolution_default_vs_custom():
     """Verifies search_query resolves to default 'has:attachment' or custom runtime input."""
     planner = ExecutionPlanner()
-    spec = build_phase16_canonical_spec(
+    spec = build_reference_spec(
         approval_state=ApprovalState.APPROVED,
         reviewed_by="Lead Security Reviewer",
     )
@@ -292,7 +292,7 @@ def test_execution_plan_parameter_resolution_default_vs_custom():
 def test_approval_gate_enforcement():
     """Human approval is mandatory: unapproved spec cannot create plan or execute."""
     planner = ExecutionPlanner()
-    spec = build_phase16_canonical_spec(
+    spec = build_reference_spec(
         approval_state=ApprovalState.REQUIRES_REVIEW,
         reviewed_by=None,
     )
@@ -474,12 +474,12 @@ def test_zero_matching_email_safety_and_subsequent_step_blocking(tmp_path):
 
 
 # -------------------------------------------------------------------------
-# Test 7: Full Track C Regression with Dynamic Runtime Query
+# Test 7: Full reference-workflow regression with Dynamic Runtime Query
 # -------------------------------------------------------------------------
 
 def test_full_track_c_orchestration_with_dynamic_query(tmp_path):
-    """Executes the complete Track C workflow with a dynamic runtime Gmail query."""
-    orchestrator = Phase16Orchestrator()
+    """Executes the complete reference workflow with a dynamic runtime Gmail query."""
+    orchestrator = WorkflowOrchestrator()
 
     spec = orchestrator.prepare_workflow(
         auto_approve=True,

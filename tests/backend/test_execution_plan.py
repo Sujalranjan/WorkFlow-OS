@@ -1,4 +1,4 @@
-"""Deterministic automated tests for Phase 7 Execution Planning and Dry Run / Shadow Simulation.
+"""Deterministic automated tests Execution Planning and Dry Run / Shadow Simulation.
 
 Verifies:
 1. Execution plan creation from an APPROVED canonical workflow specification.
@@ -10,7 +10,7 @@ Verifies:
 7. Execution strategy selection and explainable rationale.
 8. Expected state changes (before_state, expected_after_state, actual_state UNTOUCHED).
 9. Precondition validation (satisfied, unsatisfied, unknown).
-10. Risk propagation from Phase 6 risk analysis.
+10. Risk propagation risk analysis.
 11. Confirmation requirement propagation.
 12. Dry-run deterministic simulation (SIMULATED status, never SUCCESSFUL).
 13. Persistence across repository reload / backend restart.
@@ -47,7 +47,7 @@ from tests.fixtures.discovery_fixtures import generate_deterministic_dataset
 
 @pytest.fixture
 def approved_spec():
-    """Generates an approved CanonicalWorkflowSpec end-to-end through Phase 1-6 pipelines."""
+    """Generates an approved CanonicalWorkflowSpec end-to-end through the discovery and specification pipeline."""
     events = generate_deterministic_dataset()
     sessions = WorkflowSegmenter(session_inactivity_timeout_seconds=120.0).segment(events)
     discovery = WorkflowDiscoveryEngine(min_occurrences=2, similarity_threshold=0.65)
@@ -194,7 +194,7 @@ def test_precondition_validation_marks_unknown_without_assuming_satisfied(approv
 
 
 def test_risk_and_confirmation_propagation(approved_spec):
-    """Execution plan inherits per-step risk, workflow risk, and confirmation requirements from Phase 6."""
+    """Execution plan inherits per-step risk, workflow risk, and confirmation requirements."""
     planner = ExecutionPlanner()
     plan = planner.create_execution_plan(spec=approved_spec)
 

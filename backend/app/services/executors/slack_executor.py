@@ -1,4 +1,4 @@
-"""Slack API Executor (Phase 15D).
+"""Slack API Executor.
 
 Executes approved team notifications via the official Slack Web API (chat.postMessage).
 Integrates with the WorkFlowOS Execution Policy and Verification Engine.

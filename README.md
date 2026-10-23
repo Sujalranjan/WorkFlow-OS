@@ -4,12 +4,18 @@
 
 WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
 
+```mermaid
+flowchart LR
+    O[Observe<br/>desktop agent +<br/>browser extension] --> D[Discover<br/>repeated routines]
+    D --> I[Interpret<br/>Gemini, checked against<br/>what was observed]
+    I --> A{Approve<br/>workflow}
+    A --> R[Run<br/>manually or on<br/>new email, approved]
+    R --> X[Gmail · CRM · Slack]
+    X --> V[Verify<br/>independent re-reads]
+    V --> L[Reliability]
 ```
-Observe ──► Discover ──► DNA ──► Interpret ──► Spec + approval ──► Plan ──► Execute ──► Verify ──► Learn
-(agent +    (repeated    (what    (LLM, checked   (human must        (exact    (Gmail/    (independent  (reliability
- browser     sessions)    stays/   against the     approve)           routing)  CRM/Slack)  re-checks)    profile)
- extension)               varies)  DNA)
-```
+
+Details: [docs/architecture.md](docs/architecture.md) · setup and configuration: [docs/development.md](docs/development.md).
 
 ## How observation becomes execution
 
@@ -110,7 +116,7 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 | Service | Configure | Notes |
 |---|---|---|
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
-| Gmail (read-only) | `credentials.json` (OAuth client) + `GMAIL_ENABLED=true` | Sign in: `python desktop-agent/desktop_agent/demo_phase12_live.py` (delete an expired `token.json` first) |
+| Gmail (read-only) | `credentials.json` (OAuth client) + `GMAIL_ENABLED=true` | Sign in: `python scripts/gmail_login.py` (`--force` to replace an expired sign-in) |
 | Slack | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` | Bot needs `chat:write` (+ `channels:history` for verification) |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
 
@@ -127,7 +133,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs this suite, type-
 
 Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 
-The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [phase16_workflow.py](backend/app/services/phase16_workflow.py), and then execute and verify it.
+The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [reference_workflow.py](backend/app/services/reference_workflow.py), and then execute and verify it.
 
 ## Adding a new executable action
 
@@ -137,3 +143,7 @@ The observation-to-execution bridge is covered by [tests/backend/test_observed_t
 4. Add a classification test and extend the recorded-session tests.
 
 More detail: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).
+
+## License
+
+[MIT](LICENSE)

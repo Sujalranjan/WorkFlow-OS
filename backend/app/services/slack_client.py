@@ -1,4 +1,4 @@
-"""Slack Web API Client Abstraction (Phase 15D).
+"""Slack Web API Client Abstraction.
 
 Provides a dedicated HTTPS client interface for interacting with the official Slack Web API.
 Enforces the architectural separation:

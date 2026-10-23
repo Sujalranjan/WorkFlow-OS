@@ -1,4 +1,4 @@
-"""Dry Run Simulator Service (Phase 7).
+"""Dry Run Simulator Service.
 
 Simulates workflow execution in shadow mode without performing ANY real actions:
 1. Validates planned steps and parameters.
@@ -44,7 +44,7 @@ class DryRunSimulator:
                 unresolved_params.add(p.source_parameter)
 
         for step in plan.planned_steps:
-            # Phase 10: Multi-strategy analysis
+            # Multi-strategy analysis
             strat_info = step.execution_strategy
             is_implemented = strat_info.executor_implemented
             is_supported = is_implemented and (strat_info.blocked_reason is None)

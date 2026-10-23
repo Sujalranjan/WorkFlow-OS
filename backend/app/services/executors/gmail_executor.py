@@ -1,4 +1,4 @@
-"""Gmail API Executor (Phase 12 & Phase 15A).
+"""Gmail API Executor.
 
 Implements real external execution integrations for Gmail:
 - search_email: Read-only search returning normalized message summaries.

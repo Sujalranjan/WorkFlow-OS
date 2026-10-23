@@ -1,4 +1,4 @@
-"""Tests for Phase 2 collectors: BaseCollector, WindowsWindowCollector, and FileSystemCollector."""
+"""Tests collectors: BaseCollector, WindowsWindowCollector, and FileSystemCollector."""
 
 import os
 import shutil

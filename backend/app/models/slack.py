@@ -1,4 +1,4 @@
-"""Slack Data and API Models (Phase 15D).
+"""Slack Data and API Models.
 
 Provides structured models for Slack notification payloads, API responses,
 and verification state.

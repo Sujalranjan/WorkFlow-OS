@@ -1,4 +1,4 @@
-"""Canonical Workflow Specification Repository (Phase 6).
+"""Canonical Workflow Specification Repository.
 
 Provides SQLite persistence for CanonicalWorkflowSpec entities.
 Guarantees that canonical specifications, parameter bindings, and human

@@ -6,7 +6,7 @@ from desktop_agent.models.event import ActivityEvent, ActivityEventType
 
 
 class TestActivityCollector(BaseCollector):
-    """Produces structured ActivityEvents deterministically for tests (maintains Phase 1 collector API)."""
+    """Produces structured ActivityEvents deterministically for tests (maintains collector API)."""
 
     __test__ = False
 

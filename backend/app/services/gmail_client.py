@@ -1,4 +1,4 @@
-"""Gmail API Client Abstraction for Phase 12.
+"""Gmail API Client Abstraction.
 
 Provides a dedicated, secure client interface for read-only Gmail API operations.
 Uses official Google OAuth 2.0 with the narrowest read-only scope:

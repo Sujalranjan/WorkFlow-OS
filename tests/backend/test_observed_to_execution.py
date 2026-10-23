@@ -33,7 +33,7 @@ from app.services.executors.gmail_executor import GmailApiExecutor
 from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.gmail_client import GmailApiClient
 from app.services.learning_engine import LearningEngine
-from app.services.phase16_workflow import Phase16Orchestrator, build_phase16_canonical_spec
+from app.services.reference_workflow import WorkflowOrchestrator, build_reference_spec
 from app.services.semantic_engine import SemanticUnderstandingEngine
 from app.services.semantic_provider import MockSemanticProvider
 from app.services.semantic_validator import SemanticWorkflowValidator
@@ -159,7 +159,7 @@ def test_dna_marks_executable_steps_and_extracts_action_parameters():
 
 def test_discovered_spec_matches_reference_routine():
     _, spec = discover_spec()
-    reference = build_phase16_canonical_spec()
+    reference = build_reference_spec()
 
     discovered = [(s.application, s.action, s.risk.risk_category, s.catalog_action) for s in spec.steps if s.catalog_action]
     expected = [(s.application, s.action, s.risk.risk_category, s.catalog_action) for s in reference.steps]
@@ -202,7 +202,7 @@ def orchestrator(tmp_path):
     engine = ExecutionEngine(
         canonical_repo=can_repo, plan_repo=plan_repo, exec_repo=exec_repo, default_sandbox_base=str(tmp_path / "sandbox")
     )
-    return Phase16Orchestrator(
+    return WorkflowOrchestrator(
         canonical_repo=can_repo,
         plan_repo=plan_repo,
         exec_repo=exec_repo,

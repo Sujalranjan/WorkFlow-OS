@@ -1,4 +1,4 @@
-"""CRM API Executor (Phase 15B).
+"""CRM API Executor.
 
 Implements real API-driven execution for CRM operations in WorkFlowOS:
 - find_customer: Search or lookup customer record in CRM by email/name/ID.

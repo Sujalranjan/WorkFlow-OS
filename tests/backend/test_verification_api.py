@@ -1,4 +1,4 @@
-"""Integration tests for Phase 9 Verification API endpoints:
+"""Integration tests Verification API endpoints:
 - POST /api/workflows/executions/{execution_id}/verify
 - GET /api/workflows/executions/{execution_id}/verification
 - GET /api/workflows/verifications/{verification_run_id}

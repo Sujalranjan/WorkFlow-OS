@@ -1,4 +1,4 @@
-"""Canonical Workflow Specification API endpoints (Phase 6).
+"""Canonical Workflow Specification API endpoints.
 
 Provides REST endpoints for:
 1. Generating formal CanonicalWorkflowSpec from validated SemanticWorkflow

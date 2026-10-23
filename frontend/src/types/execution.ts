@@ -148,7 +148,7 @@ export interface ExecutionPlanListResponse {
 }
 
 // ----------------------------------------------------------------------
-// Phase 8: Execution Engine Types
+// Execution engine types
 // ----------------------------------------------------------------------
 
 export type ExecutionMode = 'DRY_RUN' | 'LIVE';
@@ -224,7 +224,7 @@ export interface ExecutionListResponse {
 }
 
 // ----------------------------------------------------------------------
-// Phase 9: Verification Engine Types
+// Verification engine types
 // ----------------------------------------------------------------------
 
 export type VerificationStatus =

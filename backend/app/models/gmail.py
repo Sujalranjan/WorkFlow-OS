@@ -1,4 +1,4 @@
-"""Normalized Gmail API Models (Phase 12).
+"""Normalized Gmail API Models.
 
 Defines:
 - GmailMessageSummary: Normalized, privacy-preserving email metadata.

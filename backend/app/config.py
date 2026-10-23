@@ -26,7 +26,7 @@ SANDBOX_DIR = os.getenv("WORKFLOWOS_SANDBOX_DIR", "workflowos_sandbox")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
-# Phase 12 / 12.1: Gmail API Integration Configuration (Read-Only)
+# Gmail API Integration Configuration (Read-Only)
 GMAIL_ENABLED = os.getenv("GMAIL_ENABLED", "false").lower() in ("true", "1", "yes")
 GMAIL_CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
 GMAIL_TOKEN_PATH = os.getenv("GMAIL_TOKEN_PATH", "token.json")
@@ -38,7 +38,7 @@ GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "5"))
 TRIGGER_POLLER_ENABLED = os.getenv("TRIGGER_POLLER_ENABLED", "true").lower() in ("true", "1", "yes")
 TRIGGER_POLLER_TICK_SECONDS = float(os.getenv("TRIGGER_POLLER_TICK_SECONDS", "15"))
 
-# Phase 15D: Slack API Integration Configuration
+# Slack API Integration Configuration
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 SLACK_API_BASE_URL = os.getenv("SLACK_API_BASE_URL", "https://slack.com/api")

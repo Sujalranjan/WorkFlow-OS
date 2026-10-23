@@ -1,4 +1,4 @@
-"""Deterministic Semantic Validation Layer (Phase 5).
+"""Deterministic Semantic Validation Layer.
 
 Validates that LLM-generated SemanticWorkflow strictly adheres to the empirical
 facts established by the underlying WorkflowDNA. Rejects hallucinations, invented

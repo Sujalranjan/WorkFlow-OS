@@ -1,4 +1,4 @@
-"""Execution Engine for WorkFlowOS (Phase 8).
+"""Execution Engine for WorkFlowOS.
 
 Responsible for:
 1. Validating execution policy & human approval status.
@@ -244,7 +244,7 @@ class ExecutionEngine:
                 continue
             context.current_step_number = idx
 
-            # Phase 10: Deterministic Strategy Selection & Capability Evaluation
+            # Deterministic Strategy Selection & Capability Evaluation
             sel_res = self.strategy_selector.select_strategy(step, spec)
 
             # If no implemented executor or blocked by policy/risk
@@ -364,7 +364,7 @@ class ExecutionEngine:
             if step_result.affected_resources:
                 all_affected.extend(step_result.affected_resources)
 
-            # Phase 16: Propagate successful step outputs to context.resolved_parameters for downstream steps
+            # Propagate successful step outputs to context.resolved_parameters for downstream steps
             if step_result.status == ExecutionStepStatus.SUCCESS and step_result.output:
                 act_norm = step.action.lower().strip().replace(" ", "_")
                 # 1. Namespaced outputs
@@ -375,7 +375,7 @@ class ExecutionEngine:
 
                 # 2. Domain-specific parameter bindings
                 if act_norm == "search_email":
-                    # Phase 19: Prioritize deterministically selected message, falling back to messages[0]
+                    # Prioritize deterministically selected message, falling back to messages[0]
                     sel_msg = step_result.output.get("selected_message")
                     if not sel_msg:
                         messages = step_result.output.get("messages") or []

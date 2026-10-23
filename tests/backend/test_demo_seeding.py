@@ -1,4 +1,4 @@
-"""Focused tests for the Demo Activity Seeding API (Phase 13.3).
+"""Focused tests for the Demo Activity Seeding API.
 
 Verifies:
 A. POST /api/demo/seed-activity successfully creates valid ActivityEvents.
@@ -104,7 +104,7 @@ def test_seed_activity_retrieval_and_discovery(isolated_client):
 
 
 def test_seed_local_file_automation_scenario(isolated_client):
-    """Phase 15: Local file automation scenario creates coherent Controlled Local routine."""
+    """Local file automation scenario creates coherent Controlled Local routine."""
     client, _, _ = isolated_client
 
     # 1. Seed default local_file_automation
@@ -132,7 +132,7 @@ def test_seed_local_file_automation_scenario(isolated_client):
 
 
 def test_demo_reset_endpoint(isolated_client):
-    """Phase 15: POST /api/demo/reset clears demo entities and returns clean state."""
+    """POST /api/demo/reset clears demo entities and returns clean state."""
     client, repo, _ = isolated_client
 
     # Seed events

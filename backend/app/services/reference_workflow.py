@@ -1,6 +1,6 @@
-"""Phase 16: Full End-to-End Workflow Definition and Orchestrator.
+"""Full End-to-End Workflow Definition and Orchestrator.
 
-Orchestrates the hackathon problem statement's core routine:
+Orchestrates the reference core routine:
 Gmail search_email
     ↓
 Gmail download_attachment
@@ -48,7 +48,7 @@ from app.services.learning_engine import LearningEngine
 from app.services.verification_engine import VerificationEngine
 
 
-def build_phase16_canonical_spec(
+def build_reference_spec(
     workflow_id: Optional[str] = None,
     approval_state: ApprovalState = ApprovalState.REQUIRES_REVIEW,
     reviewed_by: Optional[str] = None,
@@ -58,7 +58,7 @@ def build_phase16_canonical_spec(
     The same specification is produced by the discovery pipeline from observed browser activity
     (see tests/backend/test_observed_to_execution.py); this builder is the hand-written reference.
     """
-    wid = workflow_id or f"wf-e2e-phase16-{uuid.uuid4().hex[:8]}"
+    wid = workflow_id or f"wf-reference-{uuid.uuid4().hex[:8]}"
 
     step_1_risk = StepRisk(
         step_id="can-step-1",
@@ -245,7 +245,7 @@ def build_phase16_canonical_spec(
         state=approval_state,
         reviewed_by=reviewed_by,
         reviewed_at=datetime.now(timezone.utc).isoformat() if approval_state == ApprovalState.APPROVED else None,
-        comments="Phase 16 Full End-to-End Governance Gate",
+        comments="Full End-to-End Governance Gate",
     )
 
     boundaries = WorkflowBoundaries(
@@ -292,8 +292,8 @@ def build_phase16_canonical_spec(
     )
 
 
-class Phase16Orchestrator:
-    """Orchestrates Phase 16 Full End-to-End execution, verification, and learning."""
+class WorkflowOrchestrator:
+    """Orchestrates Full End-to-End execution, verification, and learning."""
 
     def __init__(
         self,
@@ -331,9 +331,9 @@ class Phase16Orchestrator:
         )
 
     def prepare_workflow(self, auto_approve: bool = False, reviewer: str = "Lead Reviewer") -> CanonicalWorkflowSpec:
-        """Creates and saves the Phase 16 CanonicalWorkflowSpec into the repository."""
+        """Creates and saves the CanonicalWorkflowSpec into the repository."""
         state = ApprovalState.APPROVED if auto_approve else ApprovalState.REQUIRES_REVIEW
-        spec = build_phase16_canonical_spec(approval_state=state, reviewed_by=reviewer if auto_approve else None)
+        spec = build_reference_spec(approval_state=state, reviewed_by=reviewer if auto_approve else None)
         self.canonical_repo.save(spec)
         return spec
 
@@ -346,7 +346,7 @@ class Phase16Orchestrator:
             state=ApprovalState.APPROVED,
             reviewed_by=reviewer,
             reviewed_at=datetime.now(timezone.utc).isoformat(),
-            comments="Approved for Phase 16 live orchestration.",
+            comments="Approved live orchestration.",
         )
         self.canonical_repo.save(spec)
         return spec

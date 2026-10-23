@@ -1,4 +1,4 @@
-"""Comprehensive tests for Semantic Understanding & Intent Translation (Phase 5).
+"""Comprehensive tests for Semantic Understanding & Intent Translation.
 
 Verifies:
 1. Canonical SemanticWorkflow Pydantic validation.

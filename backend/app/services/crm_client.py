@@ -1,4 +1,4 @@
-"""CRM API Client Abstraction (Phase 15B).
+"""CRM API Client Abstraction.
 
 Provides a dedicated HTTP client interface for interacting with the WorkFlowOS Demo CRM REST API.
 Enforces the architectural separation:

@@ -140,7 +140,7 @@ def test_slack_uses_configured_channel_over_recorded_one(tmp_path):
     from app.models.slack import SlackNotificationResult
     from app.services.executors.slack_executor import SlackApiExecutor
     from app.services.slack_client import SlackApiClient
-    from tests.backend.test_phase19_gmail_selection import make_test_step
+    from tests.backend.test_gmail_message_selection import make_test_step
 
     client = MagicMock(spec=SlackApiClient)
     client.default_channel_id = "C0REALTEAM1"

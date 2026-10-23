@@ -1,4 +1,4 @@
-"""Execution Repository (Phase 8).
+"""Execution Repository.
 
 Provides SQLite persistence for ExecutionAuditRecord entities.
 Guarantees that execution histories, step outcomes, and audit logs survive restarts.

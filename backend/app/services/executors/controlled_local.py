@@ -1,4 +1,4 @@
-"""Controlled Local Executor for WorkFlowOS (Phase 8).
+"""Controlled Local Executor for WorkFlowOS.
 
 Strict Guardrails:
 1. ONLY executes within a designated, isolated sandbox root folder.
@@ -154,7 +154,7 @@ class ControlledLocalExecutor(BaseExecutor):
         if not self.supports(step.execution_strategy.strategy):
             errors.append(
                 f"Strategy '{step.execution_strategy.strategy.value}' is not supported by {self.name}. "
-                f"External or UI automation strategies cannot be executed locally in Phase 8."
+                f"External or UI automation strategies cannot be executed locally."
             )
 
         # 2. External change check: Controlled local executor rejects external mutations
@@ -162,7 +162,7 @@ class ControlledLocalExecutor(BaseExecutor):
         if any(ext in target_app for ext in ["crm", "salesforce", "hubspot", "slack", "gmail", "teams"]):
             errors.append(
                 f"Target application '{step.application}' represents an external service. "
-                f"External service mutations are strictly prohibited in Phase 8."
+                f"External service mutations are strictly prohibited."
             )
 
         # 3. Action allowlist check
@@ -254,7 +254,7 @@ class ControlledLocalExecutor(BaseExecutor):
                         "action": step.action,
                         "parameters": step.resolved_parameters,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "note": "WorkFlowOS Phase 8 Controlled Local Execution Artifact",
+                        "note": "WorkFlowOS Controlled Local Execution Artifact",
                     }
                     with open(target_file, "w", encoding="utf-8") as f:
                         json.dump(content_data, f, indent=2)

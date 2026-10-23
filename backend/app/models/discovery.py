@@ -1,4 +1,4 @@
-"""Models for Workflow Segmentation and Discovery Engine (Phase 3)."""
+"""Models for Workflow Segmentation and Discovery Engine."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional

@@ -1,4 +1,4 @@
-"""Deterministic Strategy Selector Service for WorkFlowOS (Phase 10).
+"""Deterministic Strategy Selector Service for WorkFlowOS.
 
 Responsible for:
 1. Inspecting step action, target, risk, and parameter requirements.

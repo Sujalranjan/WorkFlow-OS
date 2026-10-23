@@ -1,6 +1,6 @@
-"""Automated Deterministic Test Suite for Phase 10: Adaptive Execution & Multi-Strategy Executor Selection.
+"""Automated Deterministic Test Suite: Adaptive Execution & Multi-Strategy Executor Selection.
 
-Tests all required Phase 10 criteria:
+Tests all required criteria:
 1. Local action selects CONTROLLED_LOCAL.
 2. Unsupported external action is safely blocked.
 3. Unsupported strategy is not treated as executable.
@@ -274,7 +274,7 @@ def test_unsupported_strategy_not_treated_as_executable(mock_temp_repos):
     for strat in unsupported_strategies:
         executor = registry.get_executor_for_strategy(strat)
         assert executor is not None, f"Strategy {strat.value} must be architecturally represented in registry"
-        assert executor.capability.implemented is False, f"Strategy {strat.value} must NOT be implemented in Phase 10"
+        assert executor.capability.implemented is False, f"Strategy {strat.value} must NOT be implemented"
 
 
 # =========================================================================

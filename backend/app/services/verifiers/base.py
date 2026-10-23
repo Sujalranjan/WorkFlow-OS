@@ -1,4 +1,4 @@
-"""Verification strategy abstraction (Phase 9).
+"""Verification strategy abstraction.
 
 Defines:
 - BaseVerificationStrategy: Abstract base class for all deterministic post-execution verifiers.

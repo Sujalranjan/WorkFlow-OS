@@ -1,4 +1,4 @@
-"""Demo Orchestration & Synthetic Activity Seeding API (Phase 13.3).
+"""Demo Orchestration & Synthetic Activity Seeding API.
 
 Provides safe, controlled endpoints for seeding deterministic synthetic demo
 activity events into WorkFlowOS without requiring CLI / terminal execution.
@@ -40,7 +40,7 @@ class SeedActivityRequest(BaseModel):
     """Request payload for seeding demo activity events."""
     scenario: str = Field(
         default="local_file_automation",
-        description="Demo scenario name. Supported: 'local_file_automation' (Primary Track A), 'invoice_processing' (Cross-App Safety Policy Demo)",
+        description="Demo scenario name. Supported: 'local_file_automation', 'invoice_processing'",
     )
 
 
@@ -623,20 +623,20 @@ class SeedE2EWorkflowResponse(BaseModel):
     "/seed-e2e-workflow",
     response_model=SeedE2EWorkflowResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Seed the complete Phase 16 Full End-to-End Workflow into WorkFlowOS",
+    summary="Seed the reference Gmail → CRM → Slack workflow",
 )
 def seed_e2e_workflow(
     auto_approve: bool = False,
     reviewer: Optional[str] = None,
 ) -> SeedE2EWorkflowResponse:
-    """Seeds the formal Phase 16 Canonical Workflow (Gmail → Attachment → CRM → Slack).
+    """Seeds the reference workflow specification (Gmail → Attachment → CRM → Slack).
 
     Creates a CanonicalWorkflowSpec in REQUIRES_REVIEW state (or approved if auto_approve=True).
     Ensures Demo CRM test data is seeded for customer 'cust-001'.
     """
     from app.models.crm import CrmCustomer
     from app.repositories.crm_repository import CrmRepository
-    from app.services.phase16_workflow import Phase16Orchestrator
+    from app.services.reference_workflow import WorkflowOrchestrator
 
     # Ensure Demo CRM has customer record 'cust-001'
     crm_repo = CrmRepository()
@@ -670,7 +670,7 @@ def seed_e2e_workflow(
     except Exception:
         pass
 
-    orchestrator = Phase16Orchestrator()
+    orchestrator = WorkflowOrchestrator()
     spec = orchestrator.prepare_workflow(
         auto_approve=auto_approve,
         reviewer=reviewer or "Lead Security Reviewer",
@@ -684,7 +684,7 @@ def seed_e2e_workflow(
         approval_state=spec.approval_state.state.value,
         steps_count=len(spec.steps),
         steps=step_summaries,
-        message=f"Seeded Phase 16 E2E canonical workflow '{spec.workflow_id}' with {len(spec.steps)} steps.",
+        message=f"Seeded E2E canonical workflow '{spec.workflow_id}' with {len(spec.steps)} steps.",
     )
 
 

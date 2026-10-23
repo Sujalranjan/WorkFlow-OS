@@ -1,4 +1,4 @@
-"""Tests for Phase 3 Workflow Segmentation and Discovery Engine."""
+"""Tests Workflow Segmentation and Discovery Engine."""
 
 from datetime import datetime, timedelta, timezone
 from app.models.event import ActivityEventType

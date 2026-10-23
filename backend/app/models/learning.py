@@ -1,4 +1,4 @@
-"""Workflow Learning & Reliability Intelligence Models (Phase 11).
+"""Workflow Learning & Reliability Intelligence Models.
 
 Defines:
 - FailureCategory (EXECUTION_FAILURE, VERIFICATION_FAILURE, POLICY_BLOCK, UNSUPPORTED_STRATEGY, PARAMETER_PROBLEM, UNKNOWN_OUTCOME)

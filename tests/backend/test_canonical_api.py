@@ -1,4 +1,4 @@
-"""API Integration tests for Canonical Workflow Specification endpoints (Phase 6)."""
+"""API Integration tests for Canonical Workflow Specification endpoints."""
 
 import tempfile
 import pytest

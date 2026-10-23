@@ -1,4 +1,4 @@
-"""Learning & Reliability Repository (Phase 11).
+"""Learning & Reliability Repository.
 
 Provides SQLite persistence for WorkflowReliabilityProfile and WorkflowLearningEvent entities.
 Guarantees that reliability profiles, step statistics, failure pattern intelligence,

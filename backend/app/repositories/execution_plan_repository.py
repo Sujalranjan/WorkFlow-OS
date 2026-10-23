@@ -1,4 +1,4 @@
-"""Execution Plan Repository (Phase 7).
+"""Execution Plan Repository.
 
 Provides SQLite persistence for ExecutionPlan and DryRunResult entities.
 Guarantees that generated plans and simulation results survive backend restarts.

@@ -1,4 +1,4 @@
-"""Comprehensive Automated Tests for Canonical Workflow Specification (Phase 6).
+"""Comprehensive Automated Tests for Canonical Workflow Specification.
 
 Verifies:
 1. Canonical specification creation from WorkflowDNA + validated SemanticWorkflow.

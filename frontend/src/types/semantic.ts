@@ -1,5 +1,5 @@
 /**
- * TypeScript types for Semantic Understanding (Phase 5).
+ * TypeScript types for Semantic Understanding.
  */
 
 import { WorkflowBoundaries, WorkflowDNA } from './dna';

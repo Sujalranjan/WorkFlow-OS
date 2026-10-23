@@ -1,642 +1,78 @@
-# WorkFlowOS Architecture: Workflow Discovery, DNA & Semantic Understanding
+# Architecture
 
-## Overview
+WorkFlowOS turns repeated manual work into approved, verified automations. Deterministic code decides what happened, what can run and whether it worked; the LLM only describes routines in human terms, and a person approves before anything changes.
 
-WorkFlowOS is an AI-powered desktop workflow automation system designed to observe user digital activity, detect repetition, understand user intent, generate structured workflows, obtain user approval, and execute workflows using the most reliable available mechanisms.
-
-This document describes the architectural flow from raw events to **Workflow Discovery (Phase 3)**, **Workflow DNA (Phase 4)**, and **Semantic Understanding & Intent Translation (Phase 5)**.
-
----
-
-## Architectural Progression
-
-```
-Phase 3 answers:   "What repeats?"
-Phase 4 answers:   "What stays the same and what changes?"
-Phase 5 answers:   "What does it mean?"
-Phase 6 answers:   "What is the formal workflow contract and how does the human govern it?"
-Phase 7+ answers:  "How do we safely execute the approved specification?"
-```
-
----
-
-## End-to-End Workflow Pipeline
-
-```
-Raw Activity Events (Windows Window Focus & File Watchers)
-           ↓
-   WorkflowSegmenter (Temporal & Inactivity Boundaries)
-           ↓
-   TaskSession Instances (Deterministic Session Hashing)
-           ↓
-   WorkflowDiscoveryEngine (Noise-tolerant Sequence Clustering)
-           ↓
-   DiscoveryCandidate Instances (Deterministic Canonical Signatures)
-           ↓
-   WorkflowDNAExtractor (Empirical Invariants, Variables & Evidence)
-           ↓
-   Deterministic WorkflowDNA Object
-           ↓
-   SemanticUnderstandingEngine
-           ↓
-   Prompt Construction (Structured DNA Context ONLY)
-           ↓
-   LLM Provider Layer (GeminiSemanticProvider / MockSemanticProvider)
-           ↓
-   Structured JSON Output
-           ↓
-   Deterministic Semantic Validation Layer (Ground Truth Enforcement)
-           ↓
-   Canonical Validated SemanticWorkflow Model
-           ↓
-   FastAPI Endpoints:
-   • GET /api/discovery/candidates
-   • GET /api/workflows/dna
-   • GET /api/workflows/dna/{dna_id}
-   • POST /api/workflows/{dna_id}/interpret
-   • GET /api/workflows/semantic/{semantic_workflow_id}
-           ↓
-   Frontend React Dashboard:
-   • Comparative View: Observed Ground Truth vs AI Interpretation
-   • Workflow DNA Analysis View
-   • Discovered Workflow Candidates View
-   • Live Activity Event Stream
+```mermaid
+flowchart LR
+    subgraph observe [Observe]
+        A[Desktop agent<br/>window + file events]
+        B[Browser extension<br/>Gmail / CRM / Slack actions]
+    end
+    A & B -->|POST /api/events| E[(Activity events)]
+    E --> S[Segmenter<br/>sessions split on idle gaps]
+    S --> D[Discovery<br/>repeated sequences]
+    D --> N[Workflow DNA<br/>fixed steps + changing values]
+    N --> L[Interpreter<br/>Gemini or rule-based]
+    L --> V{Validator<br/>matches DNA and<br/>action catalog?}
+    V -->|no| X[Rejected]
+    V -->|yes| W[Workflow spec<br/>steps, inputs, risk]
+    W --> H{Human review}
+    H -->|approve| P[Planner]
+    T[Email trigger<br/>Gmail, read-only] -->|new email| I{Approve this run}
+    I --> P
+    P --> R[Execution engine<br/>fail-closed]
+    R --> G[Gmail / CRM / Slack<br/>executors]
+    R -->|unsure| Q[Pause: ask a person] --> R
+    G --> Y[Verification<br/>independent re-reads]
+    Y --> Z[Reliability profile]
 ```
 
----
+## Components
 
-## Why the LLM Receives WorkflowDNA Rather Than Raw Events
-
-A central architectural differentiator of WorkFlowOS is that **raw desktop events are never streamed directly into an LLM**.
-
-1. **Noise Elimination**: Raw desktop streams contain hundreds of irrelevant focus events, accidental clicks, and alt-tabs. Sending raw streams to an LLM leads to hallucinated patterns and prompt bloat.
-2. **Deterministic Ground Truth**: Mathematical occurrence ratios, temporal boundaries, and precedence matrices are empirical facts that software computes deterministically. The LLM is an interpreter of facts, not the authority over what occurred.
-3. **Strict Privacy**: By boiling thousands of low-level OS events down to an abstract WorkflowDNA signature, sensitive transient desktop data is never transmitted across the network.
-4. **Token Efficiency & Speed**: A structured WorkflowDNA object is concise (~500 tokens), enabling sub-second, highly reproducible structured responses.
-
----
-
-## Semantic Understanding Architecture (Phase 5)
-
-### 1. Provider Abstraction
-The semantic layer interacts with LLMs exclusively through the `SemanticModelProvider` abstract base class:
-- `GeminiSemanticProvider`: Calls the Gemini REST API (model from `GEMINI_MODEL`) with JSON output mode (`responseMimeType: "application/json"`); the API key is sent in a header, never in the URL.
-- `MockSemanticProvider`: Deterministic, offline provider used for automated testing, fallback evaluation, and offline local development without API keys.
-
-### 2. Prompt Contract & Strict JSON Schema
-The prompt explicitly instructs the LLM:
-- **Role**: You are a desktop workflow semantics interpreter.
-- **Rules**:
-  1. Rely exclusively on the supplied `WorkflowDNA`.
-  2. Map semantic steps 1-to-1 to observed invariant step keys (`source_dna_step_key`).
-  3. Map semantic variables to observed structural parameters (`source_parameter`).
-  4. Preserve ordering constraints.
-  5. Never produce executable code, browser automation, or click coordinates.
-  6. Label confidence explicitly as `model_interpretation_confidence` (an LLM estimate).
-
-### 3. Deterministic Semantic Validation Layer
-Before any LLM response is accepted by the application, the `SemanticWorkflowValidator` verifies:
-- **Step Validity**: Every `source_dna_step_key` must exist in the source DNA's invariant or optional steps.
-- **Variable Validity**: Every `source_parameter` must match an existing parameter in `dna.variable_parameters`.
-- **Application Validity**: The step's application name must match the application in the corresponding DNA step.
-- **Ordering Validity**: The sequence of semantic steps must not contradict any pairwise ordering constraints established in DNA.
-- **No Invented Actions**: Reject any output containing hallucinated steps or applications.
-
-If validation fails, the response is rejected and diagnostic errors are returned. The system never silently repairs hallucinated output.
-
-### 4. Safe Fallback Behavior
-If the Gemini API key is missing, network is down, or an error occurs:
-- The backend does **not** crash.
-- Returns an `InterpretationResponse` with `status: "fallback"`.
-- The deterministic `WorkflowDNA` is preserved and returned completely intact.
-- The UI clearly indicates that semantic interpretation is currently unavailable.
-
----
-
-## Security & Privacy Boundary
-
-- **What is sent to LLM**: ONLY abstract metadata enclosed in `WorkflowDNA` (application names, high-level event types, observed window title prefixes/suffixes, and duration metrics).
-- **What is NEVER sent to LLM**: Zero screenshots, zero desktop pixels, zero keystrokes, zero clipboard data, zero passwords, zero document/file bodies, and zero browser HTML.
-
----
-
----
-
-## Phase 6: Canonical Specification, Parameter Binding & Human Governance
-
-### 1. Why `CanonicalWorkflowSpec` Exists
-A common failure mode in AI-powered workflow systems is conflating an LLM's natural-language summary with an authoritative workflow specification.
-- **WorkflowDNA**: Empirical, mathematical ground truth extracted deterministically from multi-session event logs (invariant actions, variable template ratios, ordering precedence, empirical durations).
-- **SemanticWorkflow**: Human-understandable semantic translation proposed by an LLM (what the routine means, why steps exist, estimated confidence).
-- **CanonicalWorkflowSpec**: The formal, auditable workflow contract. It fuses deterministic DNA boundaries with validated semantic intent, explicitly binds variables to typed schemas, performs deterministic risk assessments, and tracks human approval.
-
-### 2. Parameter Binding & Deterministic Type Inference
-Dynamic parameters in recurring routines change values across sessions (e.g. customer names, ticket IDs, downloaded files).
-- **Independent Parameter Traceability**: Distinct DNA parameters are never merged even if the LLM proposes identical semantic names (e.g. `window_title_variable_1` and `window_title_variable_3` both mapped to `customer_name` remain two distinct parameter bindings).
-- **Deterministic Type Inference**: Variable types (`string`, `filename`, `application`, `identifier`, `timestamp`, `unknown`) are inferred strictly from metadata evidence without LLM hallucination.
-- **User Customization**: Users can edit semantic names (e.g., `customer_name` → `client_account_name`). The underlying DNA `source_parameter` remains completely immutable.
-
-### 3. Explainable Risk Analysis
-Every workflow step is deterministically classified to establish the degree of human confirmation required:
-- `read_only` (LOW): Window observation, inspection, viewing records.
-- `local_change` (MEDIUM): Local filesystem downloads, saving files to disk.
-- `external_change` (HIGH): Mutating records in external CRM, ERP, or database systems.
-- `communication` (MEDIUM): Broadcasting team notifications via Slack, Teams, or email.
-- `potentially_sensitive` (HIGH): Involving credentials, API tokens, or confidential personal data.
-
-Every classification carries an explicit human-readable `reason`.
-
-### 4. Human Approval Lifecycle State Machine
-New workflow specifications always initialize to `requires_review` (or `draft`). The system **never** automatically approves a workflow.
-- **Approval Transition**: `requires_review` → `approved`.
-- **Rejection Transition**: `requires_review` → `rejected` (with reason).
-- **Safety Rule**: **Approval confirms specification intent ONLY**. Approval does NOT trigger Playwright, Selenium, PyAutoGUI, API calls, or shell execution. Execution is strictly deferred to future phases.
-
-### 5. Complete End-to-End Traceability
-A judge or auditor can query any step in the canonical specification and inspect its complete lineage:
-`CanonicalStep` → `source_semantic_step_id` → `source_dna_step_key` → `evidence_reference` → `TaskSession` → `ActivityEvent`.
-
----
-
----
-
-## Phase 7: Execution Planning & Dry Run (Shadow Mode)
-
-Phase 7 builds the layer that converts an **APPROVED** `CanonicalWorkflowSpec` into a deterministic `ExecutionPlan` and simulates what WorkFlowOS WOULD do, without actually performing any external or desktop action.
-
-### 1. Distinction Between Stages
-
-| Concept | Purpose | Mutates System? |
+| Area | Code | Responsibility |
 |---|---|---|
-| **Canonical Workflow Specification** | Formal contract of invariant steps, parameters, boundaries, and governance approval. | NO |
-| **Execution Plan** | Concrete plan resolving runtime parameters, execution strategies, and expected state transitions. | NO |
-| **Dry Run / Shadow Simulation** | Deterministic walk-through validating plan execution, verifying parameters, and reporting `SIMULATED`. | NO (0 real actions) |
-| **Actual Execution (Phase 8+)** | Real OS, browser, or API mutation. | **NOT IMPLEMENTED IN PHASE 7** |
-
-### 2. Strategy Selection with Explainable Rationale
-Execution strategies are selected deterministically with human-auditable reasons:
-- `application_integration`: External CRM/ERP mutations requiring rollback safeguards.
-- `api`: Direct service webhooks (e.g. Slack announcements).
-- `browser_automation`: Web browser interactions (Chrome, Edge).
-- `accessibility_semantic_ui`: OS semantic UI tree automation.
-- `ui_fallback`: Computer vision fallback when semantic UI trees are unavailable.
-
-*Note: Strategies are planned abstractions only in Phase 7; no execution engine is invoked.*
-
-### 3. State Change Separation
-For every step, the system contrasts:
-- `before_state`: System state prior to step.
-- `expected_after_state`: Expected outcome of the step.
-- `actual_state`: Strictly preserved as `UNTOUCHED (Simulation Mode - No Real Actions Executed)`.
-
-### 4. Deterministic Parameter Resolution
-- Distinguishes parameter definition, observed sample values, runtime values, and unresolved status.
-- Strict anti-hallucination guarantee: The LLM is never allowed to invent runtime values. Missing required values mark the step as `UNRESOLVED` and block the simulation.
-
----
-
-## Phase 8: Execution Engine Foundation & Controlled Local Execution
-
-Phase 8 introduces the first real execution layer while maintaining strict security boundaries, fail-closed guardrails, and complete auditability.
-
-### 1. Execution Pipeline Architecture
-
-```
-Approved CanonicalWorkflowSpec
-          ↓
-    ExecutionPlan
-          ↓
-   Execution Policy (Guardrails)
-          ↓
-   Executor Registry (Discovery)
-          ↓
-Controlled Local Executor (Sandbox)
-          ↓
-   Execution Result (Per-Step)
-          ↓
-     Audit Record (SQLite)
-```
-
-### 2. Core Execution Principles & Guardrails
-
-1. **Human Approval Enforcement (Fail-Closed)**:
-   - Live execution requires the source `CanonicalWorkflowSpec` to be in `ApprovalState.APPROVED`.
-   - Specifications in `requires_review` or `rejected` states are immediately rejected with HTTP 400 Bad Request before any executor is invoked.
-
-2. **Execution Policy Engine (`ExecutionPolicyEngine`)**:
-   - Evaluates security policies before plan execution and before each step.
-   - Rejects unapproved workflows and unresolvable required parameters.
-   - Detects external mutations (`external_change`, `communication`) and blocks them safely, ensuring external services (CRM, Slack, Gmail) remain completely untouched.
-
-3. **Executor Abstraction (`BaseExecutor`) & Registry (`ExecutorRegistry`)**:
-   - Decouples execution orchestration from concrete strategy engines via an abstract interface: `supports(strategy)`, `validate(step, context)`, and `execute(step, context)`.
-   - The `ExecutorRegistry` manages available executors and dispatches steps dynamically.
-
-4. **Controlled Local Sandbox Executor (`ControlledLocalExecutor`)**:
-   - Executes safe local actions strictly within a designated sandbox root directory (`workflowos_sandbox/<execution_id>`).
-   - **Path Traversal Protection**: Any path containing `..` or resolving outside the sandbox root is strictly rejected.
-   - **Allowlisted Actions Only**: Permits `save_file`, `create_file`, `read_file`, `copy_file`, `generate_report`.
-   - **Prohibited Capabilities**: Strictly blocks shell execution (`bash`, `sh`, `cmd`, `powershell`), process spawning (`subprocess`, `exec`, `eval`), arbitrary code evaluation, network sockets/HTTP requests, and external service mutations.
-
-5. **Dry Run vs. Live Controlled Execution**:
-   - `DRY_RUN` mode: Simulates step execution through the executor, verifying parameters and guardrails without writing any files to disk.
-   - `LIVE` mode: Executes allowlisted operations inside the sandbox directory and records affected artifacts.
-
-6. **Immutable Audit Trail (`ExecutionAuditRecord`)**:
-   - Every execution run generates an immutable audit record in SQLite (`workflowos.db` table `execution_records`).
-   - Captures `execution_id`, `workflow_id`, `workflow_version`, `execution_plan_id`, `approval_state`, `approved_by`, `execution_mode`, `status`, `start_time`, `end_time`, `step_results`, `affected_resources`, `error_summary`, and `idempotency_key`.
-   - Survives backend restarts.
-
-7. **Idempotency Protection**:
-   - Supports client-provided idempotency keys to prevent duplicate executions of identical requests.
-
----
-
-## Phase 9: Post-Execution Verification & Evidence Engine
-
-Phase 9 establishes a deterministic post-execution verification layer that checks whether an executed workflow step actually produced its expected state or result.
-
-```
-ExecutionPlan
-      ↓
-ExecutionEngine
-      ↓
-Executor (ControlledLocalExecutor)
-      ↓
-Actual Action (Sandbox File Output)
-      ↓
-Verification Engine (VerificationEngine)
-      ↓
-Verification Strategies (FileSystem, StructuredOutput)
-      ↓
-Verification Checks & Cryptographic Integrity Evidence (SHA256, Size, Path)
-      ↓
-Verification Result (Aggregated Status)
-      ↓
-Execution Audit Record Update (SQLite)
-```
-
-### 1. Distinction: Executor Success vs. Verification Success
-
-WorkFlowOS strictly separates action performance from outcome verification:
-- **Executor Success**: Only reports whether the executor completed its invocation without an unhandled exception.
-- **Verification Success**: Deterministically checks whether the required state change actually occurred in the physical sandbox.
-- **Step Outcome States**:
-  - `EXECUTED` + `VERIFIED` → **`VERIFIED`**
-  - `EXECUTED` + `FAILED` → **`VERIFICATION_FAILED`** (e.g. action reported success, but target file is missing, empty, or corrupted)
-  - `EXECUTED` + `UNKNOWN` → **`EXECUTED_UNVERIFIED`** (no deterministic local strategy available)
-  - `SKIPPED` / `BLOCKED` → **`NOT_APPLICABLE`**
-
-The system **never** equates executor `SUCCESS` with verification `VERIFIED`, and **never** converts `UNKNOWN` into `VERIFIED`.
-
-### 2. Zero-LLM Deterministic Verification
-
-In accordance with strict safety principles, **Gemini / LLMs are NEVER used to evaluate execution success**:
-- AI is restricted to semantic understanding and intent translation (Phase 5).
-- Planning, execution policy, execution, and verification are 100% deterministic code.
-- This prevents the LLM from grading its own execution results.
-
-### 3. Verification Strategies
-
-1. **`FileSystemVerificationStrategy`**:
-   - `file_exists`: Verifies target file exists inside the sandbox.
-   - `non_empty_file`: Verifies file size is strictly greater than zero.
-   - `directory_exists`: Verifies target folder exists.
-   - Computes cryptographic SHA-256 hash, byte size, and path metadata as cryptographic integrity evidence.
-2. **`StructuredOutputVerificationStrategy`**:
-   - Evaluates JSON payloads inside sandbox files.
-   - Deterministically compares expected key-value pairs against actual content.
-   - Records matched fields, mismatched fields, and missing properties without AI hallucination.
-3. **`ResourceExistenceVerificationStrategy`**:
-   - Validates declared affected resources exist in the sandbox.
-
-### 4. Deterministic Evidence Generation
-
-Every verification check generates verifiable cryptographic integrity evidence:
-```json
-{
-  "path": "E:\\WorkFlow OS\\workflowos_sandbox\\exec-123\\customer_replacement_summary.json",
-  "target_filename": "customer_replacement_summary.json",
-  "exists": true,
-  "is_file": true,
-  "size_bytes": 424,
-  "sha256": "afbc0949662a4aba801c188cf6aa2ec0fc431b1685ab458e00792eab06e09dc4",
-  "checked_at": "2026-09-26T09:43:49.177416+00:00"
-}
-```
-**Privacy & Security Boundaries**:
-- No screenshots or desktop capture.
-- No clipboard inspection.
-- No password or credential inspection.
-
-### 5. Workflow-Level Verification Aggregation Rules
-
-Deterministic aggregation:
-1. If any required check is `FAILED` → Overall **`FAILED`** (`VERIFICATION_FAILED`).
-2. Else if any required check is `UNKNOWN` → Overall **`UNKNOWN`** (`EXECUTED_UNVERIFIED`).
-3. Else if at least one check is `VERIFIED` → Overall **`VERIFIED`**.
-4. If all checks are `NOT_APPLICABLE` → Overall **`NOT_APPLICABLE`**.
-
-### 6. Sandbox Security & Fail-Closed Guardrails
-
-- **Strict Sandbox Boundary**: Verification targets must resolve strictly inside `workflowos_sandbox/<execution_id>`.
-- **Path Traversal Rejection**: Paths containing `..` or escaping sandbox are immediately rejected as `FAILED`.
-- **Origin Enforcement**: Targets originate only from the approved `ExecutionPlan` or `ExecutionStepResult`. Arbitrary paths provided by clients are forbidden.
-- **External Service Prohibition**: Verification of Gmail, CRM, or Slack APIs is explicitly prohibited and marked `NOT_APPLICABLE`.
-
-### 7. Idempotency & Persistence
-
-- **Idempotency**: Calling `POST /verify` without `force_recheck=True` reuses the existing cached `VerificationResult` from SQLite without re-running checks.
-- **Persistence**: Results are stored in SQLite (`workflowos.db` tables `workflow_verifications` and `verification_checks`), surviving server restarts.
-
----
-
-## Phase 10: Adaptive Execution & Multi-Strategy Executor Selection
-
-### 1. Conceptual Distinction: Strategy vs Executor vs Capability vs Fallback
-
-WorkFlowOS maintains strict architectural boundaries between execution concepts:
-- **Strategy (`ExecutionStrategyType`)**: An abstract category or paradigm of execution (e.g., direct API integration, application integration, accessibility UI, browser automation, or controlled local sandbox).
-- **Executor (`WorkflowExecutor`)**: A concrete execution class (e.g., `ControlledLocalExecutor`, `ApiIntegrationExecutor`) registered in the `ExecutorRegistry`.
-- **Capability (`ExecutorCapability`)**: Metadata declared by an executor describing what actions it supports, what target systems it can address, what risk levels it is allowed to handle, whether it is implemented in this phase, whether it requires external network access, and its fallback selection priority.
-- **Fallback**: The deterministic ordering through which WorkFlowOS evaluates candidate executors when the preferred mechanism is unavailable or unsupported.
-
-### 2. Supported vs Architecturally Represented Execution Strategies
-
-Phase 10 formally models 6 execution strategies while strictly enforcing implementation realities:
-
-| Strategy | Enum Value | Implementation Status | Executor Class | External Access | Priority |
-| :--- | :--- | :--- | :--- | :---: | :---: |
-| **Controlled Local** | `CONTROLLED_LOCAL` | **IMPLEMENTED** | `ControlledLocalExecutor` | No | 10 |
-| **API Integration** | `API_INTEGRATION` | *Architecturally Represented* | `ApiIntegrationExecutor` | Yes | 1 |
-| **Application Integration**| `APPLICATION_INTEGRATION` | *Architecturally Represented* | `ApplicationIntegrationExecutor` | Yes | 2 |
-| **Accessibility UI** | `ACCESSIBILITY_UI` | *Architecturally Represented* | `AccessibilityUiExecutor` | No | 3 |
-| **Browser Automation** | `BROWSER_AUTOMATION` | *Architecturally Represented* | `BrowserAutomationExecutor` | Yes | 4 |
-| **UI Fallback** | `UI_FALLBACK` | *Architecturally Represented* | `UiFallbackExecutor` | No | 5 |
-
-**Critical Architectural Invariant**:
-Executors with `implemented = False` can be evaluated and surfaced as candidates, but they are **never** invoked. The system never fakes or mocks live external service mutations.
-
-### 3. Deterministic Strategy Selection Algorithm
-
-The `StrategySelector` operates deterministically without LLMs or non-deterministic heuristics:
-1. **Candidate Gathering**: Inspects `ExecutorRegistry` for all registered executors whose `supported_actions` match the step action, or whose strategy aligns with the step's domain.
-2. **Deterministic Fallback Ordering**: Candidates are sorted by priority (`API_INTEGRATION` (1) → `APPLICATION_INTEGRATION` (2) → `ACCESSIBILITY_UI` (3) → `BROWSER_AUTOMATION` (4) → `UI_FALLBACK` (5) → `CONTROLLED_LOCAL` (10)).
-3. **Capability Filtering**:
-   - Matches action and target.
-   - Enforces risk boundary: if step risk is higher than executor's maximum supported risk level, the candidate is rejected with an auditable reason.
-   - Enforces implementation check: if `capability.implemented is False`, the candidate is rejected with `Strategy '<name>' is architecturally represented but NOT implemented in Phase 10`.
-4. **Policy Validation**: The top implemented candidate is validated against `ExecutionPolicyEngine` (checking approval state, parameter resolution, sandbox restrictions, and communication blocks).
-5. **Selection Output**:
-   - If an implemented, policy-compliant executor is found: returns `StrategySelectionResult(canonical_strategy=..., executor=..., policy_decision=ALLOWED)`.
-   - If no implemented executor exists: returns `StrategySelectionResult(canonical_strategy=None, blocked_reason=UNSUPPORTED_EXECUTION_STRATEGY, policy_decision=BLOCKED)`.
-
-### 4. Integration Across the Lifecycle
-
-- **Execution Planning (`ExecutionPlanner`)**: Each `PlannedStep` is evaluated through `StrategySelector` during plan creation. The step's `StepExecutionStrategy` records `canonical_strategy`, `available_strategies_considered`, `rejected_strategies`, `rejection_reasons`, and `executor_implemented`.
-- **Dry-Run Simulation (`DryRunSimulator`)**: Dry-run reflects strategy selection without performing real actions. For unsupported steps, dry-run reports `selected_strategy=None` and `policy_decision=BLOCKED`.
-- **Live Execution (`ExecutionEngine`)**: The engine resolves the executor via `StrategySelector`. If `selected_strategy` is null or unimplemented, the engine executes fail-closed, returning `ExecutionStepStatus.BLOCKED` with code `UNSUPPORTED_EXECUTION_STRATEGY`.
-- **Audit Traceability (`ExecutionAuditRecord`)**: Step audit records capture `selected_strategy`, `selection_reason`, `candidate_strategies`, `fallback_used`, and `blocked_reason`.
-- **Verification (`VerificationEngine`)**: Blocked steps yield `NOT_APPLICABLE` verification checks without fabricating false evidence.
-
----
-
-## Phase 11: Workflow Learning & Reliability Intelligence
-
-### 1. Conceptual Framework: The "LEARN" Stage
-
-Phase 11 completes the observe → identify → understand → specify → approve → plan → select → execute → verify → **LEARN** lifecycle of WorkFlowOS.
-
-Rather than relying on ungrounded AI guesses or continuous auto-mutation, WorkFlowOS treats **historical execution and post-execution verification audits** as empirical ground truth. The system learns:
-- Which workflows and steps consistently verify expected state.
-- Which steps suffer from state mismatches (verification failures).
-- Which steps are blocked due to missing executor capabilities or unresolved parameters.
-- What failure patterns occur repeatedly across sessions.
-
-### 2. Strict Human Governance Safeguards
-
-**CRITICAL INVARIANT**: Learning is strictly advisory and read-only.
-- **NO Automatic Workflow Modification**: The Learning Engine **NEVER** mutates `CanonicalWorkflowSpec` steps, variables, or boundaries.
-- **NO Approval State Tampering**: The engine **NEVER** automatically approves, rejects, or changes human governance metadata.
-- **NO Autonomous Execution**: The engine **NEVER** executes workflows or bypasses the human approval requirement.
-- **NO External Service Mutations**: Zero network requests or third-party API mutations occur during learning analysis.
-
-### 3. Deterministic Failure Classification
-
-Outcomes are classified without LLM inference using deterministic decision rules:
-- **`VERIFICATION_FAILURE`**: The executor reported `SUCCESS`, but post-execution state checks `FAILED` (stronger evidence than executor self-reporting).
-- **`EXECUTION_FAILURE`**: The executor threw an exception or returned `FAILED`.
-- **`UNSUPPORTED_STRATEGY`**: The step was blocked because no implemented executor supports the action/target.
-- **`PARAMETER_PROBLEM`**: The step was blocked because required parameters were unresolved or missing.
-- **`POLICY_BLOCK`**: The step was blocked by security policy, sandbox constraints, or unapproved workflow state.
-- **`UNKNOWN_OUTCOME`**: Non-actionable or unverified execution status.
-
-### 4. Deterministic Reliability Metrics
-
-All metrics are calculated numerically and deterministically:
-- $\text{Total Executions} = \text{Completed} + \text{Failed} + \text{Blocked}$
-- $\text{Completed Executable Executions} = \text{Verified} + \text{Failed} + \text{Verification Failures}$
-- $\text{Reliability Rate} = \frac{\text{Verified Executions}}{\text{Completed Executable Executions}}$ (measures true verified success)
-- $\text{Execution Success Rate} = \frac{\text{Successful Executions}}{\text{Successful Executions} + \text{Failed Executions}}$
-- $\text{Verification Rate} = \frac{\text{Verified Executions}}{\text{Successful Executions}}$
-- $\text{Blocked Rate} = \frac{\text{Blocked Executions}}{\text{Total Executions}}$
-
-### 5. Empirical Pattern Detection
-
-Deterministic rule-based pattern discovery:
-- **`REPEATED_VERIFICATION_FAILURE`**: Triggered when a step accumulates $\ge 2$ verification failures.
-- **`REPEATED_UNSUPPORTED_STRATEGY`**: Triggered when a step accumulates $\ge 2$ unsupported strategy blocks.
-- **`REPEATED_PARAMETER_PROBLEM`**: Triggered when a step accumulates $\ge 2$ parameter resolution failures.
-- **`REPEATED_VERIFIED_SUCCESS`**: Triggered when a workflow accumulates $\ge 2$ verified executions with zero failures.
-
-### 6. Evidence-Backed Improvement Suggestions
-
-Every improvement suggestion is grounded in empirical execution and verification IDs:
-- Clearly marked `is_advisory = True` and labeled `SUGGESTION (NOT APPLIED CHANGE)`.
-- Recommends concrete actions (e.g. "Review the expected-state definition for Step X", "An implemented execution strategy for Step Y is required").
-- Accompanied by exact occurrence counts, affected step IDs, execution IDs, and verification IDs.
-
-### 7. SQLite Persistence & Idempotency
-
-- Persisted in SQLite tables:
-  - `workflow_reliability_profiles` (keyed by `workflow_id`)
-  - `workflow_learning_events` (chronological audit history)
-- `POST /api/workflows/{workflow_id}/learning/refresh` recomputes and persists intelligence idempotently: identical execution history produces identical profiles.
-
----
-
-## Phase 12 — Real Gmail API Integration (Read-Only Search)
-
-Phase 12 implements the first real external execution integration in WorkFlowOS using Google's official Gmail API.
-
-> [!IMPORTANT]
-> **Scope Boundary**: "Phase 12 implements one read-only Gmail API operation."
-> WorkFlowOS does NOT fully automate Gmail. Mutating operations (sending, deleting, moving, labeling, marking as read, or downloading attachments) are strictly prohibited.
-
-### 1. Integration Architecture
-
-```
-CanonicalWorkflowSpec (Approved)
-           ↓
-     ExecutionPlan
-           ↓
-    StrategySelector (API_INTEGRATION & Gmail Target Matching)
-           ↓
-   ExecutionPolicyEngine (Strict Policy Check)
-           ↓
-     GmailApiExecutor (strategy: API_INTEGRATION, implemented: True)
-           ↓
-      GmailApiClient (OAuth 2.0 Client Abstraction)
-           ↓
-   Google Gmail API (messages.list & messages.get with format='metadata')
-           ↓
- Normalized Result (GmailSearchResult & GmailMessageSummary)
-           ↓
-  VerificationEngine (GmailVerificationStrategy)
-           ↓
- ExecutionAuditRecord (Zero Credential Leakage)
-           ↓
-     LearningEngine (Reliability Profile Update)
-```
-
-### 2. OAuth Flow & Authorization Scope
-
-- **Official OAuth 2.0**: Uses Google's official OAuth 2.0 mechanism via `google-auth-oauthlib` and `google-api-python-client`.
-- **Minimum Required Scope**: Strictly uses the narrowest read-only scope:
-  `https://www.googleapis.com/auth/gmail.readonly`
-  Broad read/write scopes (`gmail.modify`, `mail.google.com`, `gmail.compose`) are prohibited.
-- **Fail-Closed Security**: If credentials or tokens are unavailable, execution fails closed with `AUTHENTICATION_REQUIRED` or `INTEGRATION_UNAVAILABLE`. Tokens are never logged, committed, or transmitted to the frontend.
-
-### 3. Configuration Architecture
-
-Centralized in `backend/app/config.py`:
-- `GMAIL_ENABLED`: Boolean flag toggling Gmail integration (default `False`).
-- `GMAIL_CREDENTIALS_PATH`: Path to OAuth client `credentials.json` (defaults to project root).
-- `GMAIL_TOKEN_PATH`: Path to authorized user `token.json` (defaults to project root).
-- `GMAIL_SCOPES`: Frozen list `["https://www.googleapis.com/auth/gmail.readonly"]`.
-
-### 4. Supported Gmail Operation
-
-- **Action Name**: `search_email`
-- **Target Application**: `Gmail`
-- **Execution Strategy**: `API_INTEGRATION`
-- **Behavior**: Deterministically queries the Gmail API using an approved parameter query (e.g. `from:supplier@example.com subject:invoice`), retrieves matching message metadata, normalizes records into structured summaries, and outputs total count and sample message headers.
-- **Prohibited Operations**: Deletion, sending, draft creation, label modification, moving to trash, marking as read, and arbitrary attachment downloads are strictly prohibited.
-
-### 5. Response Normalization & Privacy Safeguards
-
-The executor does not expose raw API dictionaries. It normalizes outputs into minimal Pydantic models (`backend/app/models/gmail.py`):
-- `message_id`, `thread_id`
-- `sender`, `subject`, `timestamp`, `snippet`
-Zero full email bodies are stored. Zero access or refresh tokens are persisted in memory or logs.
-
-### 6. Post-Execution Verification
-
-`GmailVerificationStrategy` evaluates executed steps deterministically:
-- Verifies that `search_email` was called with the approved query parameter.
-- Evaluates structured output presence (`query`, `total_found`, normalized message summaries).
-- Evidence stores non-sensitive metadata (query string, result count, and message IDs only).
-- Produces `VERIFIED` status upon success, or `FAILED` if output is missing or corrupted.
-
-### 7. Audit & Learning Integration
-
-- **Execution Audit**: Every run records an `ExecutionAuditRecord` capturing strategy (`API_INTEGRATION`), executor (`GmailApiExecutor`), operation (`search_email`), and execution duration without token leakage.
-- **Phase 11 Learning**: The `LearningEngine` aggregates Gmail execution and verification outcomes into the workflow reliability profile (`total_executions`, `verified_executions`, `execution_success_rate`, `verification_rate`).
-
-### 8. Security Boundaries
-
-- Zero token leakage in logs, audit records, or frontend responses.
-- No fallback to `ControlledLocalExecutor` if Gmail is unavailable.
-- Deterministic query parameters bound from approved workflow specifications only; no runtime LLM-generated API queries.
-
----
-
-## Action Catalog: Bridging Observation and Execution
-
-Earlier phases produced DNA steps such as `google chrome:window_focused`. Those describe what was
-on screen but do not say what was done, so the executors could not run them. The hand-written
-Gmail -> CRM -> Slack spec (`phase16_workflow.py`) worked around this rather than solving it.
-
-`backend/app/services/action_catalog.py` closes the gap:
-
-1. **Catalog**: a fixed list of executable actions (`gmail.search_email`, `gmail.download_attachment`,
-   `crm.find_customer`, `crm.update_customer_record`, `slack.send_notification`). Each entry has an
-   exact executor name, a deterministic risk level and category, its parameters and its outputs.
-2. **Classification**: `classify_event()` maps an observed event to a catalog action using URL and
-   metadata rules (Gmail search fragment, Gmail-origin downloads, Demo CRM `/ui/customers/...` pages
-   and form posts, Slack channel sends). `step_key_for_event()` returns `gmail:search_email` for these
-   and `<app>:<event_type>` for everything else. Discovery and DNA extraction both use it.
-3. **DNA**: invariant and optional steps carry `catalog_action`. Catalog parameters become DNA
-   variables named after the parameter (`search_query`, `customer_query`, ...). Raw URLs of classified
-   steps are not duplicated as variables.
-4. **Semantics**: the prompt marks executable steps, and the validator rejects any interpretation that
-   drops one. The canonical factory takes action name, application and risk from the catalog, so LLM
-   wording cannot change routing.
-5. **Planning**: catalog steps are planned with their catalog parameters. Non-catalog steps in a
-   workflow that also has catalog steps are recorded in `excluded_steps`. A parameter that varied across
-   observed runs is never filled from a past sample: it resolves from upstream outputs
-   (`FROM_UPSTREAM`, e.g. `{customer_email}`) or stays `UNRESOLVED` until supplied at run time.
-6. **Routing**: `StrategySelector` sends a catalog step to the named executor only, and still applies
-   the implementation, risk-level and external-access policy checks.
-7. **Execution**: fail-closed on both FAILED and BLOCKED steps. Gmail sender headers are reduced to
-   the bare address before downstream steps use them.
-
-Observation sources:
-
-- `desktop-agent/browser_extension`: an MV3 extension that reports only Gmail search routes,
-  Gmail-origin downloads (origin and path only), Demo CRM pages and status submissions, and Slack send
-  events (channel id from the URL, never message text).
-- `WindowsWindowCollector` resolves browser windows to the web app they show (Gmail, CRM, Slack).
-- The Demo CRM serves a small browser UI at `/ui/customers`, so the CRM step can be done, and
-  observed, by hand.
-
-## Email Triggers, Per-Run Approval and Intervention
-
-An approved workflow that starts with `gmail.search_email` can be attached to an **email trigger**
-(`backend/app/services/trigger_service.py`). This is the "Trigger: new customer request received in
-Gmail" part of the workflow; nothing runs without a person deciding.
-
-```
-TriggerScheduler (asyncio, every TRIGGER_POLLER_TICK_SECONDS)
-  └─ TriggerService.poll_due() ── per trigger, at most every poll_interval_seconds (min 30s)
-        Gmail messages.list  q="(<trigger query>) after:<active_since>"   (gmail.readonly)
-        new message id? ──► WorkflowRun(PENDING_APPROVAL)      ← workflow_runs is the ledger:
-                                                                  UNIQUE(trigger_id, message_id)
-Inbox (UI / API)
-  approve ──► ExecutionPlanner(search_query, trigger_message_id)
-          ──► ExecutionEngine.execute_plan (LIVE, idempotency key = run id)
-          ──► VerificationEngine ──► LearningEngine
-  NEEDS_INPUT ──► person supplies a value ──► ExecutionEngine.resume_execution (same execution)
-```
-
-- **Polling, not push.** Gmail is checked on an interval with the existing read-only client. There is no
-  Pub/Sub push and no Gmail History API: query polling plus a local ledger is simpler, matches the
-  trigger's query exactly and needs no extra Google Cloud setup. New emails are noticed within roughly
-  one interval, not instantly.
-- **Only new email.** `active_since` (the trigger's creation time, or an explicit look-back chosen when
-  creating it) keeps an existing inbox from flooding the approval queue.
-- **Pinned to its email.** The run passes `trigger_message_id` to `search_email`, which then fetches that
-  exact message (`GmailApiClient.get_message_summary`) instead of re-searching. The selection rule is
-  recorded as `TRIGGER_MESSAGE`, and the attachment download consumes that message id.
-- **Two approvals.** The workflow specification must be APPROVED to create a trigger, to plan a run and
-  to resume one. Each run is also approved individually. Moving a run out of `PENDING_APPROVAL` is a
-  single conditional SQL update, so a double click or two operators cannot execute it twice (and Slack
-  cannot be notified twice).
-- **Needs intervention.** `find_customer` no longer guesses. No CRM match, or several matches without
-  exactly one exact email/id match, returns step status `NEEDS_INPUT` with the reason and up to 10
-  candidates. The engine stops there without skipping later steps, stores the paused step index and the
-  parameters gathered so far on the execution record, and `resume_execution` continues the **same**
-  execution from that step once a person picks a customer (`selected_customer_id`, exact lookup) or gives
-  a new search (`customer_query`). Only inputs the paused step declared are accepted, and approval and
-  plan policy are re-checked before resuming. Both attempts stay in the audit record. Rejecting a paused
-  run cancels its execution.
-- **Run lifecycle:** `PENDING_APPROVAL → RUNNING → (NEEDS_INPUT ⇄ RUNNING) → COMPLETED | FAILED |
-  BLOCKED`, or `REJECTED`. A run never stays in `RUNNING` after an error; failures are recorded on it.
-
-## Still Not Implemented
-
-- **No Gmail mutations**: no sending, deleting, archiving, moving or labeling.
-- **No general browser or desktop input automation**: execution only goes through catalog API executors
-  (plus the controlled local sandbox executor). No Playwright, Selenium or PyAutoGUI.
-- **Catalog coverage**: only the actions listed above are executable. Other observed activity is context.
-- **No autonomous workflow editing**: improvements require human review and approval.
+| Observation | `desktop-agent/` | Windows window-focus and file collectors; MV3 browser extension for Gmail searches and downloads, CRM pages and updates, Slack sends. Sends structured `ActivityEvent`s, never page content, keystrokes or screenshots. |
+| Discovery | `workflow_segmenter.py`, `workflow_discovery.py` | Splits events into sessions at idle gaps (120 s), filters incidental apps, and groups similar sessions with `difflib.SequenceMatcher` (similarity ≥ 0.65, at least 2 occurrences). |
+| Workflow DNA | `workflow_dna_extractor.py` | For one repeated routine: steps present in every session, optional steps, values that change between sessions, ordering constraints, duration bounds and evidence. Ids derive from a SHA-256 of the step signature, so the same routine always gets the same id. |
+| Action catalog | `action_catalog.py` | The fixed list of executable actions, each with exactly one executor, a risk level and its parameters. Observed events are classified into catalog actions by URL and metadata rules, with no LLM involved. |
+| Interpretation | `semantic_provider.py`, `semantic_engine.py`, `semantic_validator.py` | Gemini (JSON output with a response schema) or, without a key, a rule-based interpreter. Output that names steps, applications or parameters absent from the DNA, or breaks its ordering, is rejected rather than repaired. |
+| Specification | `canonical_factory.py`, `risk_analyzer.py` | Builds the reviewable workflow: catalog steps, parameter bindings and per-step risk. Starts in *requires review*; reuses the existing workflow for the same routine. |
+| Planning | `execution_planner.py` | Only for approved workflows. Resolves each parameter: runtime input, then output of an earlier step (e.g. customer ← email sender), then an observed value only if it never changed. A value that differed between sessions is never copied from a past run. |
+| Execution | `execution_engine.py`, `executors/`, `strategy_selector.py`, `execution_policy.py` | Runs steps in order through the catalog's executor, passing outputs forward (selected email id → attachment download → customer id → CRM update). A failed or blocked step stops the run; later steps are skipped, never attempted. Idempotency keys prevent repeated runs. |
+| Intervention | engine + `crm_executor.py` | When a step cannot decide safely (no CRM customer, or several), it returns `NEEDS_INPUT`. The run pauses with its state saved and continues from that step once a person answers. Approval and policy are re-checked first. |
+| Verification | `verification_engine.py`, `verifiers/` | After a run, re-reads each system independently: file size and SHA-256 for downloads, a fresh CRM `GET` for updates, Slack `conversations.history` for messages. *Executed* and *verified* are reported separately. |
+| Learning | `learning_engine.py` | Reliability per workflow and step from execution and verification history, failure classification and suggestions. Advisory only: it never edits workflows or approvals. |
+| Automation | `trigger_service.py`, `trigger_scheduler.py` | Email triggers poll Gmail on an interval (`(<query>) after:<created>`). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
+| API and UI | `backend/app/api/`, `frontend/src/` | FastAPI (OpenAPI at `/docs`); React + TypeScript dashboard: Overview, Activity, Workflows, Inbox, Automations, Runs. |
+
+## Integrations
+
+| System | Operations | Notes |
+|---|---|---|
+| Gmail | search, fetch one message, download attachment | OAuth scope `gmail.readonly` only. Attachments are written to a per-run sandbox folder with path-traversal checks. |
+| CRM | find customer, get customer, update status | Separate FastAPI service with its own database, reached over HTTP. Ships with a browser UI so the CRM step can be done, and observed, by hand. |
+| Slack | post message, read channel history | Bot token; messages go to `SLACK_CHANNEL_ID`. |
+| Gemini | describe a routine | Receives only the DNA summary (apps, step types, parameter names and sample values), never raw events. |
+
+## Safety model
+
+- **Two decisions by a person**: approving the workflow, and approving each triggered run (manual runs ask for confirmation in the UI).
+- **Dry run** simulates every step with zero external calls.
+- **Fail closed**: missing credentials, unresolved parameters, policy blocks and executor errors stop the run with a reason.
+- **No silent guesses**: ambiguous lookups pause for a person instead of picking a record.
+- **Secrets** never appear in API responses, audit records, logs or LLM prompts; tests assert this.
+
+## Observability
+
+Logs are structured (JSON in Docker). Each API request carries an id from `X-Request-ID` (or a generated one) that is attached to every log line written while handling it, including outbound Gmail, CRM and Slack calls. Every execution keeps a full audit record: per-step parameters, outputs, errors, chosen executor and policy decision.
+
+## Storage
+
+SQLite: one database for WorkFlowOS (events, workflows, plans, executions, verifications, reliability, triggers and runs) and one for the Demo CRM. Records are stored as validated JSON next to indexed columns.
+
+## Current limits
+
+- Single user; the API has no authentication and is meant for a trusted machine or private network.
+- Interpretations are cached in memory, so after a restart a routine is re-interpreted before a new workflow is created from it (existing workflows are unaffected).
+- Only catalog actions execute; other observed activity is kept as context. Browser, accessibility and UI-automation strategies are modelled but have no executor.
+- Gmail is polled, not pushed.

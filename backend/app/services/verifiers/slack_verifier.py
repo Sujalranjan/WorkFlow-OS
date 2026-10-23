@@ -1,4 +1,4 @@
-"""Slack Verification Strategy (Phase 15D).
+"""Slack Verification Strategy.
 
 Independently verifies that Slack notifications were genuinely delivered and exist
 in the target Slack workspace/channel.

@@ -1,4 +1,4 @@
-"""Workflow DNA API endpoints (Phase 4)."""
+"""Workflow DNA API endpoints."""
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status

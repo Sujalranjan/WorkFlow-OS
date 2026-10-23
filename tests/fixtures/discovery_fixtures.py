@@ -1,4 +1,4 @@
-"""Deterministic test datasets for Workflow Segmentation, Discovery, and Workflow DNA (Phase 4)."""
+"""Deterministic test datasets for Workflow Segmentation, Discovery, and Workflow DNA."""
 
 from datetime import datetime, timedelta, timezone
 from typing import List
@@ -23,7 +23,7 @@ def create_test_event(
 def generate_deterministic_dataset() -> List[ActivityEvent]:
     """Generates a rich, deterministic set of multi-session ActivityEvents.
 
-    Phase 4 Enhancements:
+    Enhancements:
     - Session 1:
       * Gmail (title: "Rahul - Replacement Request")
       * file_downloaded (file_name: "invoice_101.pdf")

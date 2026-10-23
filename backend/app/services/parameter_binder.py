@@ -1,4 +1,4 @@
-"""Parameter Binding Service (Phase 6).
+"""Parameter Binding Service.
 
 Responsible for:
 1. Deterministically binding structural WorkflowDNA variable parameters to

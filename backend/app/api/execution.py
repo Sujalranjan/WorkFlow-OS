@@ -171,7 +171,7 @@ async def run_dry_run(execution_plan_id: str) -> DryRunResult:
 
 
 # -------------------------------------------------------------------------
-# Phase 8: Execution Engine Endpoints
+# Execution Engine Endpoints
 # -------------------------------------------------------------------------
 
 exec_repo = ExecutionRepository()
@@ -352,7 +352,7 @@ async def get_plan_strategy(execution_plan_id: str) -> PlanStrategyResponse:
 
 
 # -------------------------------------------------------------------------
-# Phase 9: Post-Execution Verification Endpoints
+# Post-Execution Verification Endpoints
 # -------------------------------------------------------------------------
 
 verif_repo = VerificationRepository()

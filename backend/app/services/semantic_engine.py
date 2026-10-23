@@ -1,4 +1,4 @@
-"""Semantic Understanding Engine (Phase 5).
+"""Semantic Understanding Engine.
 
 Coordinates LLM semantic interpretation, deterministic ground truth validation,
 caching, and safe fallback handling when the LLM provider is unavailable.

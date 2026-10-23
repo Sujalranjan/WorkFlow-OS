@@ -1,4 +1,4 @@
-"""Canonical Workflow Specification Models (Phase 6).
+"""Canonical Workflow Specification Models.
 
 Represents the formal, executable-ready workflow contract combining:
 - Deterministic structural constraints from WorkflowDNA
