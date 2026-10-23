@@ -299,6 +299,10 @@ code {
   color: var(--bad);
 }
 
+.warn-text {
+  color: var(--warn);
+}
+
 /* ---------- controls ---------- */
 
 button,

@@ -36,10 +36,9 @@ from app.api.crm import router as crm_router
 from app.api.crm_ui import router as crm_ui_router
 from app.repositories.crm_repository import CrmRepository
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+from app.logging_config import RequestLoggingMiddleware, setup_logging
+
+setup_logging("crm")
 logger = logging.getLogger("workflowos.crm_server")
 
 
@@ -50,7 +49,7 @@ async def lifespan(app: FastAPI):
     repo = CrmRepository()
     existing = repo.list_all(limit=1)
     if not existing:
-        logger.info("CRM database is empty. Seeding default hackathon demo customers...")
+        logger.info("CRM database is empty. Seeding default demo customers...")
         repo.seed_default_customers()
     logger.info("WorkFlowOS Demo CRM server is ready.")
     yield
@@ -72,6 +71,8 @@ crm_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+crm_app.add_middleware(RequestLoggingMiddleware, service="crm")
 
 # Mount CRM REST API
 crm_app.include_router(crm_router)

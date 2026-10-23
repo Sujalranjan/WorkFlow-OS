@@ -126,6 +126,35 @@ class GmailApiClient:
             logger.debug("Failed validating Gmail token file: %s", str(e))
             return False
 
+    def check_access(self) -> Tuple[bool, str]:
+        """Confirm with Google that the saved sign-in still works (refreshing it if expired).
+
+        Unlike is_authenticated(), this makes a network call, so it notices a revoked or
+        expired refresh token instead of trusting the token file.
+        """
+        if self._service is not None:
+            return True, "Read-only access."
+        if not os.path.exists(self.token_path):
+            return False, "Sign-in needed: run the Gmail authorization script to create token.json."
+        try:
+            from google.auth.transport.requests import Request
+            from google.oauth2.credentials import Credentials
+
+            creds = Credentials.from_authorized_user_file(self.token_path, self.scopes)
+            if creds.valid:
+                return True, "Read-only access."
+            if not creds.refresh_token:
+                return False, "Sign-in expired: delete token.json and run the Gmail authorization script again."
+            creds.refresh(Request())
+            with open(self.token_path, "w", encoding="utf-8") as token_file:
+                token_file.write(creds.to_json())
+            return True, "Read-only access."
+        except Exception as e:
+            logger.info("Gmail sign-in check failed: %s", e)
+            if "invalid_grant" in str(e):
+                return False, "Sign-in expired: delete token.json and run the Gmail authorization script again."
+            return False, f"Could not confirm Gmail access: {type(e).__name__}."
+
     def authenticate_interactive(self, open_browser: bool = True) -> Any:
         """Starts an interactive OAuth 2.0 authorization flow in the local browser.
 

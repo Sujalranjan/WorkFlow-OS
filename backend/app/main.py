@@ -15,6 +15,7 @@ from app.api.execution import router as execution_router
 from app.api.health import router as health_router
 from app.api.learning import router as learning_router
 from app.api.semantic import router as semantic_router
+from app.logging_config import RequestLoggingMiddleware, setup_logging
 from app.config import PROJECT_NAME, TRIGGER_POLLER_ENABLED, TRIGGER_POLLER_TICK_SECONDS, VERSION
 from app.services.trigger_scheduler import TriggerScheduler
 
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
+    setup_logging("api")
     app = FastAPI(
         title=PROJECT_NAME,
         version=VERSION,
@@ -49,6 +51,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(RequestLoggingMiddleware, service="api")
 
     # Register routers
     app.include_router(health_router)

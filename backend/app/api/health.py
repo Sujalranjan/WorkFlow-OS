@@ -37,7 +37,7 @@ def get_integration_status() -> Dict[str, Any]:
     elif not gmail.is_authenticated():
         gmail_status = _integration(False, "Sign-in needed: run the Gmail authorization script to create token.json.")
     else:
-        gmail_status = _integration(True, "Read-only access.")
+        gmail_status = _integration(*gmail.check_access())
 
     slack = SlackApiClient(timeout=3.0)
     if not os.getenv("SLACK_BOT_TOKEN") or not os.getenv("SLACK_CHANNEL_ID"):

@@ -58,9 +58,7 @@ export const InboxPage: React.FC<{ onChange: () => void }> = ({ onChange }) => {
               busy={action.busy}
               onApprove={() => act(`approve-${run.run_id}`, () => approveRun(run.run_id, operator))}
               onReject={() => act(`reject-${run.run_id}`, () => rejectRun(run.run_id, operator))}
-              onResume={(customerId) =>
-                act(`resume-${run.run_id}`, () => resumeRun(run.run_id, { selected_customer_id: customerId }, operator))
-              }
+              onResume={(inputs) => act(`resume-${run.run_id}`, () => resumeRun(run.run_id, inputs, operator))}
             />
           ))}
         </ul>
@@ -75,13 +73,18 @@ const InboxItem: React.FC<{
   busy: string | null;
   onApprove: () => void;
   onReject: () => void;
-  onResume: (customerId: string) => void;
+  onResume: (inputs: Record<string, string>) => void;
 }> = ({ run, workflowTitle, busy, onApprove, onReject, onResume }) => {
   const [selected, setSelected] = useState('');
   const [typed, setTyped] = useState('');
   const email = run.source_email;
   const candidates = run.intervention?.candidates || [];
-  const choice = selected || typed.trim();
+  // A picked candidate is looked up by its exact id; typed text searches the CRM by name, email or id.
+  const inputs: Record<string, string> | null = selected
+    ? { selected_customer_id: selected }
+    : typed.trim()
+      ? { customer_query: typed.trim() }
+      : null;
 
   return (
     <li className={`card inbox-item${run.status === 'NEEDS_INPUT' ? ' inbox-item-attention' : ''}`}>
@@ -136,15 +139,15 @@ const InboxItem: React.FC<{
           <div className="inline-form">
             <input
               value={typed}
-              aria-label="Customer id"
-              placeholder={candidates.length ? 'or type a customer id' : 'Customer id from your CRM'}
+              aria-label="Search the CRM"
+              placeholder={candidates.length ? 'or search by name, email or id' : 'Search the CRM by name, email or id'}
               onChange={(e) => {
                 setTyped(e.target.value);
                 setSelected('');
               }}
             />
-            <button disabled={busy !== null || !choice} onClick={() => onResume(choice)}>
-              {busy === `resume-${run.run_id}` ? 'Continuing…' : 'Continue'}
+            <button disabled={busy !== null || !inputs} onClick={() => inputs && onResume(inputs)}>
+              {busy === `resume-${run.run_id}` ? 'Checking…' : selected ? 'Use this customer' : 'Search and continue'}
             </button>
             <button className="btn-secondary" disabled={busy !== null} onClick={onReject}>
               Cancel run

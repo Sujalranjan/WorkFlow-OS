@@ -74,3 +74,6 @@ workflowos_sandbox/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Docker: Gmail credentials/token mounted into the API container
+secrets/

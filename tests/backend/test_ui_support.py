@@ -111,3 +111,53 @@ def test_status_reports_connections_without_secrets(monkeypatch):
     assert body["slack"]["connected"] is False
     assert body["gmail"]["connected"] is False and "Sign-in needed" in body["gmail"]["detail"]
     assert secret not in res.text
+
+
+def test_status_reports_expired_gmail_sign_in(monkeypatch):
+    from app.services.crm_client import CrmApiClient
+    from app.services.gmail_client import GmailApiClient
+
+    monkeypatch.setattr(CrmApiClient, "is_healthy", lambda self: False)
+    monkeypatch.setattr(GmailApiClient, "is_configured", lambda self: True)
+    monkeypatch.setattr(GmailApiClient, "is_authenticated", lambda self: True)  # token file looks fine…
+    monkeypatch.setattr(
+        GmailApiClient,
+        "check_access",
+        lambda self: (False, "Sign-in expired: delete token.json and run the Gmail authorization script again."),
+    )  # …but Google rejects it
+
+    body = TestClient(create_app()).get("/api/status").json()
+    assert body["gmail"] == {
+        "connected": False,
+        "detail": "Sign-in expired: delete token.json and run the Gmail authorization script again.",
+    }
+
+
+def test_slack_uses_configured_channel_over_recorded_one(tmp_path):
+    from unittest.mock import MagicMock
+
+    from app.models.execution import ExecutionContext, ExecutionMode, ExecutionStepStatus
+    from app.models.slack import SlackNotificationResult
+    from app.services.executors.slack_executor import SlackApiExecutor
+    from app.services.slack_client import SlackApiClient
+    from tests.backend.test_phase19_gmail_selection import make_test_step
+
+    client = MagicMock(spec=SlackApiClient)
+    client.default_channel_id = "C0REALTEAM1"
+    client.send_notification.return_value = SlackNotificationResult(success=True, channel="C0REALTEAM1", ts="1.2")
+    step = make_test_step("plan-step-5", "send_notification", application="Slack")
+    step.resolved_parameters = {"channel": "C0123456789"}  # copied from recorded sample sessions
+    ctx = ExecutionContext(
+        execution_id="e",
+        workflow_id="w",
+        execution_plan_id="p",
+        sandbox_root=str(tmp_path),
+        execution_mode=ExecutionMode.LIVE,
+        resolved_parameters={"customer_name": "Rahul", "email_subject": "Replacement request"},
+    )
+
+    res = SlackApiExecutor(client=client).execute(step, ctx)
+    assert res.status == ExecutionStepStatus.SUCCESS, res.error
+    kwargs = client.send_notification.call_args.kwargs
+    assert kwargs["channel"] == "C0REALTEAM1"
+    assert "Phase 16" not in kwargs["text"] and "Rahul" in kwargs["text"]

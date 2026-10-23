@@ -1,5 +1,7 @@
 # WorkFlowOS
 
+[![CI](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/ci.yml)
+
 WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
 
 ```
@@ -38,7 +40,21 @@ tests/              pytest suite (isolated: never touches your databases or live
 docs/               Architecture and development notes
 ```
 
-## Quickstart
+## Run with Docker
+
+```bash
+docker compose up --build
+```
+
+This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). Data is kept in the `workflowos-data` volume.
+
+- Integrations are read from `.env` if it exists (copy `.env.example`).
+- For Gmail, create `token.json` on your machine first (the sign-in opens a browser, so it can't run inside a container), then put `credentials.json` and `token.json` in a `secrets/` folder next to `docker-compose.yml`.
+- The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
+- Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
+
+## Run locally
+
 
 ```bash
 pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
@@ -106,6 +122,8 @@ Environment variables take precedence over `.env`. Never commit `.env`, `credent
 # PowerShell: $env:PYTHONPATH=".;backend;desktop-agent"
 PYTHONPATH=".;backend;desktop-agent" pytest tests -q
 ```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs this suite, type-checks and builds the frontend, and builds and starts the Docker stack on every push and pull request.
 
 Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 

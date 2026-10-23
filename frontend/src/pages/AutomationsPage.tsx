@@ -65,6 +65,11 @@ export const AutomationsPage: React.FC = () => {
                       {t.name} <Badge status={t.enabled ? 'enabled' : 'paused'} />
                     </div>
                     <code className="query">{t.gmail_query}</code>
+                    {isBroadQuery(t.gmail_query) && (
+                      <div className="warn-text small">
+                        Too broad: this matches unrelated emails. Delete it and create one with a sender or subject.
+                      </div>
+                    )}
                     <div className="muted small">
                       Runs <a href={href('workflows', t.workflow_id)}>{title(t.workflow_id)}</a> · checks every{' '}
                       {t.poll_interval_seconds}s · last checked {timeAgo(t.last_polled_at)} · {runs.length} email
@@ -161,6 +166,12 @@ export const AutomationsPage: React.FC = () => {
   );
 };
 
+/** True when the query has nothing that narrows it to one kind of email (sender, subject, label…). */
+export function isBroadQuery(query: string): boolean {
+  const q = query.toLowerCase();
+  return !/(^|\s)-?(from|subject|label|to|cc|list|deliveredto|filename):\S/.test(q) && !/"[^"]+"/.test(q);
+}
+
 const NewTrigger: React.FC<{
   workflows: CanonicalWorkflowSpec[];
   preselect?: string;
@@ -204,6 +215,14 @@ const NewTrigger: React.FC<{
         onSubmit={(e) => {
           e.preventDefault();
           if (!workflowId || !query.trim()) return;
+          if (
+            isBroadQuery(query) &&
+            !window.confirm(
+              'This search will match many unrelated emails (receipts, newsletters…), and each one lands in your Inbox. Save it anyway?',
+            )
+          ) {
+            return;
+          }
           onCreate({
             workflow_id: workflowId,
             gmail_query: query.trim(),
@@ -223,7 +242,14 @@ const NewTrigger: React.FC<{
             placeholder='subject:"Customer Replacement Request" has:attachment'
             onChange={(e) => setQuery(e.target.value)}
           />
-          <span className="muted small">Any Gmail search works, e.g. from:, subject:, has:attachment, label:.</span>
+          {query.trim() && isBroadQuery(query) ? (
+            <span className="warn-text small">
+              Too broad: add a sender or subject, e.g. <code>from:orders@acme.com</code> or{' '}
+              <code>subject:"Replacement Request"</code>, so only real requests are picked up.
+            </span>
+          ) : (
+            <span className="muted small">Any Gmail search works, e.g. from:, subject:, has:attachment, label:.</span>
+          )}
         </label>
         <label className="field">
           Run this workflow

@@ -1,0 +1,56 @@
+# Runs the WorkFlowOS API, the Demo CRM and the dashboard.
+#   docker compose up --build
+# Dashboard: http://localhost:5173   API: http://localhost:8000/docs   CRM UI: http://localhost:8001/ui/customers
+#
+# Integrations are read from .env (optional). For Gmail, put credentials.json and token.json in ./secrets
+# (create token.json on your machine first; the OAuth sign-in opens a browser and cannot run in a container).
+# The desktop agent and browser extension still run on your machine and report to http://localhost:8000.
+
+services:
+  crm:
+    build: ./backend
+    command: ["uvicorn", "app.crm_server:crm_app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      HEALTH_URL: http://127.0.0.1:8001/api/crm/health
+    ports:
+      - "8001:8001"
+    volumes:
+      - workflowos-data:/data
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Paths and service addresses inside the containers (override anything in .env).
+      DATABASE_PATH: /data/workflowos.db
+      WORKFLOWOS_SANDBOX_DIR: /data/sandbox
+      GMAIL_CREDENTIALS_PATH: /secrets/credentials.json
+      GMAIL_TOKEN_PATH: /secrets/token.json
+      CRM_API_BASE_URL: http://crm:8001/api/crm
+      LOG_FORMAT: json
+    ports:
+      - "8000:8000"
+    volumes:
+      - workflowos-data:/data
+      - ./secrets:/secrets
+    depends_on:
+      crm:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_BACKEND_URL: http://localhost:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  workflowos-data:

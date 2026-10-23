@@ -158,6 +158,70 @@ REQUIRED JSON OUTPUT FORMAT (Strict JSON only, no markdown formatting, no code b
     return prompt
 
 
+def _obj(properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
+    return {"type": "OBJECT", "properties": properties, "required": required, "propertyOrdering": list(properties)}
+
+
+_STR = {"type": "STRING"}
+_STR_LIST = {"type": "ARRAY", "items": _STR}
+
+# Gemini responseSchema (OpenAPI subset). Constrains the model to the SemanticWorkflow shape;
+# SemanticWorkflowValidator then checks the content against the WorkflowDNA and ActionCatalog.
+SEMANTIC_RESPONSE_SCHEMA: Dict[str, Any] = _obj(
+    {
+        "title": _STR,
+        "intent": _STR,
+        "summary": _STR,
+        "semantic_steps": {
+            "type": "ARRAY",
+            "items": _obj(
+                {
+                    "step_id": _STR,
+                    "source_dna_step_key": _STR,
+                    "application": _STR,
+                    "action": _STR,
+                    "description": _STR,
+                    "input_variables": _STR_LIST,
+                    "output_variables": _STR_LIST,
+                    "evidence_reference": _STR,
+                },
+                ["source_dna_step_key", "application", "action", "description", "evidence_reference"],
+            ),
+        },
+        "semantic_variables": {
+            "type": "ARRAY",
+            "items": _obj(
+                {
+                    "source_parameter": _STR,
+                    "semantic_name": _STR,
+                    "source_field": _STR,
+                    "observed_values": _STR_LIST,
+                    "reason": _STR,
+                    "model_interpretation_confidence": {"type": "NUMBER"},
+                },
+                ["source_parameter", "semantic_name", "source_field", "reason"],
+            ),
+        },
+        "optional_steps": {
+            "type": "ARRAY",
+            "items": _obj(
+                {
+                    "step_id": _STR,
+                    "source_dna_step_key": _STR,
+                    "application": _STR,
+                    "condition_or_trigger": _STR,
+                    "description": _STR,
+                },
+                ["source_dna_step_key", "application", "condition_or_trigger", "description"],
+            ),
+        },
+        "preconditions": _STR_LIST,
+        "interpretation_notes": _STR,
+    },
+    ["title", "intent", "summary", "semantic_steps", "semantic_variables", "optional_steps", "preconditions"],
+)
+
+
 class GeminiSemanticProvider(SemanticModelProvider):
     """Google Gemini LLM provider for semantic interpretation."""
 
@@ -188,7 +252,10 @@ class GeminiSemanticProvider(SemanticModelProvider):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": "application/json"},
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": SEMANTIC_RESPONSE_SCHEMA,
+            },
         }
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
@@ -208,6 +275,10 @@ class GeminiSemanticProvider(SemanticModelProvider):
 
         parsed["source_dna_id"] = dna.dna_id
         parsed["boundaries"] = dna.boundaries.model_dump()
+        parsed.setdefault("evidence_mapping", {
+            "invariants": dna.evidence.invariant_evidence,
+            "variables": dna.evidence.variable_evidence,
+        })
         parsed["model_provider"] = f"gemini/{self.model_name}"
         parsed["status"] = "interpreted"
         return parsed

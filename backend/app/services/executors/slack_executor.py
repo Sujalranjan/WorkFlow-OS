@@ -41,6 +41,20 @@ from app.services.slack_client import (
 logger = logging.getLogger(__name__)
 
 
+
+def _default_message(params: dict) -> str:
+    """Status message built from what this run actually did."""
+    customer = params.get("customer_name") or params.get("customer_id") or "the customer"
+    lines = [f"Request processed for {customer}"]
+    if params.get("email_subject"):
+        lines.append(f"Email: {params['email_subject']}")
+    if params.get("customer_status"):
+        lines.append(f"CRM status: {params['customer_status']}")
+    if params.get("filename"):
+        lines.append(f"Attachment: {params['filename']}")
+    return "\n".join(lines)
+
+
 class SlackApiExecutor(BaseExecutor):
     """Executor executing verified Slack team notifications via SlackApiClient."""
 
@@ -124,15 +138,18 @@ class SlackApiExecutor(BaseExecutor):
             if v is not None:
                 resolved_params[k] = v
 
-        channel_param = resolved_params.get("channel") or resolved_params.get("channel_id")
+        # The team's configured channel wins over a channel id copied from recorded sessions:
+        # a recording (or sample data) can name a channel this bot cannot post to.
+        channel_param = (
+            getattr(self.client, "default_channel_id", None)
+            or resolved_params.get("channel")
+            or resolved_params.get("channel_id")
+        )
         message_text = (
             resolved_params.get("message")
             or resolved_params.get("text")
             or resolved_params.get("content")
-            or (
-                f"WorkFlowOS Phase 16 E2E — Customer replacement processed for "
-                f"{resolved_params.get('customer_name') or resolved_params.get('customer_id') or 'customer'}"
-            )
+            or _default_message(resolved_params)
         )
 
         # 2. DRY RUN MODE: Guarantee 0 external API calls and 0 real actions
