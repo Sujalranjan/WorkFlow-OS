@@ -9,7 +9,7 @@ from app.config import GEMINI_API_KEY
 from app.models.semantic import InterpretationResponse, SemanticWorkflow
 from app.services.event_service import EventService
 from app.services.semantic_engine import SemanticUnderstandingEngine
-from app.services.semantic_provider import GeminiSemanticProvider, MockSemanticProvider
+from app.services.semantic_provider import GeminiSemanticProvider, MockSemanticProvider, RuleBasedSemanticProvider
 
 router = APIRouter(prefix="/api/workflows", tags=["Semantic Understanding"])
 
@@ -25,8 +25,8 @@ def get_semantic_engine() -> SemanticUnderstandingEngine:
         if api_key:
             provider = GeminiSemanticProvider(api_key=api_key)
         else:
-            # If no API key is configured, default to MockSemanticProvider so the system works out-of-the-box
-            provider = MockSemanticProvider()
+            # No LLM configured: describe workflows with deterministic rules from the observation.
+            provider = RuleBasedSemanticProvider()
         _semantic_engine = SemanticUnderstandingEngine(provider=provider)
     return _semantic_engine
 
@@ -40,7 +40,7 @@ def interpret_workflow_dna_endpoint(
     similarity_threshold: float = Query(default=0.65, ge=0.4, le=1.0),
     provider_type: Optional[str] = Query(
         default=None,
-        description="Optional provider override: 'gemini' or 'mock'",
+        description="Optional provider override: 'gemini', 'rules' or 'mock' (test fixture)",
     ),
     force_refresh: bool = Query(default=False),
     service: EventService = Depends(get_event_service),
@@ -65,6 +65,8 @@ def interpret_workflow_dna_endpoint(
     # Allow dynamic provider selection if requested
     if provider_type == "mock":
         engine.set_provider(MockSemanticProvider())
+    elif provider_type == "rules":
+        engine.set_provider(RuleBasedSemanticProvider())
     elif provider_type == "gemini":
         engine.set_provider(GeminiSemanticProvider())
 

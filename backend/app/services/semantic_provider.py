@@ -3,7 +3,8 @@
 Provides an abstract interface for LLM semantic interpretation with:
 1. SemanticModelProvider (Abstract Base Class)
 2. GeminiSemanticProvider (Google Gemini API integration with structured JSON)
-3. MockSemanticProvider (Deterministic, fully controllable provider for tests and offline modes)
+3. MockSemanticProvider (Deterministic, fully controllable provider for tests)
+4. RuleBasedSemanticProvider (Offline default: describes workflows from DNA + ActionCatalog only)
 """
 
 from abc import ABC, abstractmethod
@@ -357,5 +358,128 @@ class MockSemanticProvider(SemanticModelProvider):
             },
             "interpretation_notes": "All semantic steps map 100% to observed invariant events in WorkflowDNA. Variable customer_name is inferred with 0.92 confidence based on recurring window title patterns.",
             "model_provider": "mock-semantic-provider",
+            "status": "interpreted",
+        }
+
+
+def _humanize(token: str) -> str:
+    text = token.replace("_", " ").replace(".", " ").strip()
+    return text[:1].upper() + text[1:]
+
+
+class RuleBasedSemanticProvider(SemanticModelProvider):
+    """Offline interpreter used when no LLM is configured.
+
+    Everything it writes is derived from the WorkflowDNA and the ActionCatalog: step wording comes
+    from catalog descriptions, names from observed parameters, and the title from the apps involved.
+    It never invents business context the observation does not contain.
+    """
+
+    def interpret_workflow_dna(self, dna: WorkflowDNA) -> Dict[str, Any]:
+        steps: List[Dict[str, Any]] = []
+        actions = []
+        for idx, inv in enumerate(dna.invariant_steps, 1):
+            catalog = get_action(inv.catalog_action)
+            if catalog:
+                action, description = catalog.action, catalog.description
+                actions.append(catalog)
+            elif "file" in inv.application.lower():
+                event = inv.event_type.lower()
+                action = (
+                    "read_file" if "open" in event
+                    else "generate_report" if "create" in event
+                    else "save_file" if ("download" in event or "save" in event)
+                    else "process_downloaded_file"
+                )
+                description = f"{_humanize(inv.event_type)} in the local file system."
+            else:
+                action = inv.event_type
+                description = f"{_humanize(inv.event_type)} in {inv.application} (observed context)."
+            steps.append(
+                {
+                    "step_id": f"sem-step-{idx}",
+                    "source_dna_step_key": inv.step_key,
+                    "application": inv.application,
+                    "action": action,
+                    "description": description,
+                    "input_variables": [],
+                    "output_variables": [],
+                    "evidence_reference": (
+                        f"Occurred in {inv.occurrences}/{inv.total_sessions} supporting sessions "
+                        f"({round(inv.occurrence_ratio * 100)}%)."
+                    ),
+                }
+            )
+
+        variables: List[Dict[str, Any]] = []
+        for var in dna.variable_parameters:
+            field = var.source_field
+            if field.startswith("action."):
+                name = field.split(".", 1)[1]
+            elif "title" in field:
+                name = "window_title"
+            elif "file" in field:
+                name = "file_name"
+            else:
+                name = var.parameter_name
+            variables.append(
+                {
+                    "source_parameter": var.parameter_name,
+                    "semantic_name": name,
+                    "source_field": field,
+                    "observed_values": var.observed_values,
+                    "reason": (
+                        f"{var.distinct_value_count} different values across {var.total_observations} "
+                        f"observations of {var.associated_application}."
+                    ),
+                    "model_interpretation_confidence": 1.0,
+                }
+            )
+
+        optional = [
+            {
+                "step_id": f"sem-opt-{i}",
+                "source_dna_step_key": opt.step_key,
+                "application": opt.application,
+                "condition_or_trigger": f"Seen in {opt.occurrences} of {opt.total_sessions} sessions.",
+                "description": f"{_humanize(opt.event_type)} in {opt.application}, done only sometimes.",
+            }
+            for i, opt in enumerate(dna.optional_steps, 1)
+        ]
+
+        apps: List[str] = []
+        for inv in dna.invariant_steps:
+            if inv.application not in apps:
+                apps.append(inv.application)
+        action_apps = [a.application for a in actions]
+        title_apps = [a for a in apps if a in action_apps] or apps
+        title = f"{' → '.join(title_apps)} routine"
+        if actions:
+            intent = "; then ".join(a.description[:1].lower() + a.description[1:] for a in actions)
+            intent = intent[:1].upper() + intent[1:] + "."
+        else:
+            intent = f"Repeated activity across {', '.join(apps)}."
+        sessions = dna.boundaries.total_supporting_sessions
+        summary = (
+            f"Repeated {sessions} times. {len(actions)} of {len(steps)} observed steps can be automated "
+            f"through {', '.join(dict.fromkeys(a.application for a in actions)) or 'no integration yet'}."
+        )
+
+        return {
+            "source_dna_id": dna.dna_id,
+            "title": title,
+            "intent": intent,
+            "summary": summary,
+            "semantic_steps": steps,
+            "semantic_variables": variables,
+            "optional_steps": optional,
+            "preconditions": [f"{app} is reachable." for app in dict.fromkeys(a.application for a in actions)],
+            "boundaries": dna.boundaries.model_dump(),
+            "evidence_mapping": {
+                "invariants": dna.evidence.invariant_evidence,
+                "variables": dna.evidence.variable_evidence,
+            },
+            "interpretation_notes": "Described by built-in rules from observed steps and the action catalog (no LLM).",
+            "model_provider": "rule-based",
             "status": "interpreted",
         }

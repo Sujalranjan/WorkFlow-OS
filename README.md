@@ -33,7 +33,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 backend/            FastAPI backend: pipeline services, executors, verifiers, Demo CRM (+ browser UI)
 desktop-agent/      Windows window/file collectors, event queue, demo scripts
   browser_extension/  Chrome/Edge extension that reports Gmail/CRM/Slack actions
-frontend/           React + TypeScript dashboard
+frontend/           React + TypeScript dashboard (pages/, components/, api.ts)
 tests/              pytest suite (isolated: never touches your databases or live services)
 docs/               Architecture and development notes
 ```
@@ -62,11 +62,26 @@ pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
 
    Then do the routine by hand a few times (at least 2 sessions, separated by 2+ minutes of inactivity).
 
-No real activity yet? In the dashboard, click **⚡ Observed Gmail → CRM → Slack**, or call `POST /api/demo/seed-activity` with `{"scenario": "observed_browser_routine"}`. That loads three recorded sessions. Then go through Discovery → DNA → Interpret → Spec → Approve → Plan → Dry run.
+No real activity yet? On the **Activity** page, click **Load sample activity** (or call `POST /api/demo/seed-activity` with `{"scenario": "observed_browser_routine"}`). That loads three recorded sessions of a Gmail → CRM → Slack routine.
+
+### Using the dashboard
+
+Open `http://localhost:5173`. The sidebar follows the life of a workflow:
+
+| Page | What you do there |
+|---|---|
+| **Overview** | See which integrations are connected, a getting-started checklist, and anything waiting for you. |
+| **Activity** | See what was recorded. Under *Repeated routines*, click **Create workflow** on a routine (e.g. *Gmail → CRM → Slack, seen 3 times*). |
+| **Workflows** | Review each step and what it changes, then **Approve** or **Reject**. An approved workflow can be tried with **Test run** (changes nothing) or run with **Run now**. Its reliability appears after it has run. |
+| **Inbox** | Approve emails picked up by a trigger, and answer runs that paused (for example, choose which CRM customer an email is about). |
+| **Automations** | Create email triggers that start a workflow when a matching email arrives. |
+| **Runs** | Every run, step by step, and whether the result was verified afterwards. |
+
+Without `GEMINI_API_KEY`, routines are described by built-in rules from what was observed; with a key, Gemini writes the description and its output is checked against the observation before use.
 
 ### Automate it: email triggers
 
-Once a workflow that starts with a Gmail search is approved, open the **Automations** tab and create an email trigger with a Gmail query (for example `subject:"Customer Replacement Request" has:attachment`).
+Once a workflow that starts with a Gmail search is approved, open **Automations** and create an email trigger with a Gmail query (for example `subject:"Customer Replacement Request" has:attachment`).
 
 - While the backend runs, it checks Gmail on the trigger's interval (default 60 s, minimum 30 s; read-only). Every new matching email appears in the **Inbox** as a run waiting for approval. Nothing runs until you approve it.
 - **Approve & run** executes the workflow for that exact email: the attachment download uses that email's message id, never "the newest match". The run is then verified and fed into the reliability profile.

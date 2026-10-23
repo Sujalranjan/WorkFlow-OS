@@ -69,6 +69,12 @@ def create_canonical_specification_endpoint(
             detail=f"Validated Semantic Workflow '{semantic_workflow_id}' not found. Please interpret WorkflowDNA first.",
         )
 
+    # The same observed routine always yields the same DNA id; reuse its workflow instead of
+    # piling up duplicates every time someone clicks "create" again. Rejected ones can be redone.
+    existing = repository.get_by_dna_id(semantic_wf.source_dna_id)
+    if existing and existing.approval_state.state != ApprovalState.REJECTED:
+        return existing
+
     # 2. Find the corresponding source WorkflowDNA
     dna_items = _generate_dna_from_events(
         service=event_service,

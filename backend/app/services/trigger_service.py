@@ -108,7 +108,7 @@ class TriggerService:
             )
         trigger = EmailTrigger(
             workflow_id=req.workflow_id,
-            name=(req.name or "").strip() or f"New email → {spec.title}",
+            name=(req.name or "").strip() or f"{spec.title} · email trigger",
             gmail_query=req.gmail_query.strip(),
             poll_interval_seconds=req.poll_interval_seconds,
         )

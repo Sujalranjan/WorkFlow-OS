@@ -160,7 +160,8 @@ export type ExecutionStepStatus =
   | 'FAILED'
   | 'BLOCKED'
   | 'SKIPPED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'NEEDS_INPUT';
 
 export type ExecutionOverallStatus =
   | 'PENDING'
@@ -168,7 +169,8 @@ export type ExecutionOverallStatus =
   | 'COMPLETED'
   | 'FAILED'
   | 'CANCELLED'
-  | 'BLOCKED';
+  | 'BLOCKED'
+  | 'NEEDS_INPUT';
 
 export interface ExecutionStepResult {
   execution_step_id: string;
@@ -190,6 +192,7 @@ export interface ExecutionStepResult {
   fallback_used?: boolean;
   policy_decision?: string;
   blocked_reason?: string | null;
+  intervention?: Record<string, any> | null;
 }
 
 
@@ -212,6 +215,7 @@ export interface ExecutionAuditRecord {
   idempotency_key?: string | null;
   verification_status?: string | null;
   verification_id?: string | null;
+  paused_step_index?: number | null;
 }
 
 export interface ExecutionListResponse {
