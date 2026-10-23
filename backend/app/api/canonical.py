@@ -27,6 +27,7 @@ from app.models.canonical import (
 )
 from app.models.dna import WorkflowDNA
 from app.repositories.canonical_repository import CanonicalWorkflowRepository
+from app.security import current_actor
 from app.services.canonical_factory import CanonicalWorkflowFactory
 from app.services.event_service import EventService
 from app.services.semantic_engine import SemanticUnderstandingEngine
@@ -137,6 +138,7 @@ def approve_canonical_specification_endpoint(
     workflow_id: str,
     payload: ApprovalActionRequest = ApprovalActionRequest(),
     repository: CanonicalWorkflowRepository = Depends(get_canonical_repository),
+    actor: str = Depends(current_actor),
 ) -> CanonicalWorkflowSpec:
     """Approve a canonical workflow specification.
 
@@ -147,7 +149,7 @@ def approve_canonical_specification_endpoint(
     updated = repository.update_approval_state(
         workflow_id=workflow_id,
         new_state=ApprovalState.APPROVED,
-        reviewer=payload.reviewer or "user",
+        reviewer=actor,
         comments=payload.comments,
     )
     if not updated:
@@ -163,12 +165,13 @@ def reject_canonical_specification_endpoint(
     workflow_id: str,
     payload: ApprovalActionRequest,
     repository: CanonicalWorkflowRepository = Depends(get_canonical_repository),
+    actor: str = Depends(current_actor),
 ) -> CanonicalWorkflowSpec:
     """Reject a canonical workflow specification with an optional explanation."""
     updated = repository.update_approval_state(
         workflow_id=workflow_id,
         new_state=ApprovalState.REJECTED,
-        reviewer=payload.reviewer or "user",
+        reviewer=actor,
         comments=payload.comments,
         rejection_reason=payload.reason,
     )

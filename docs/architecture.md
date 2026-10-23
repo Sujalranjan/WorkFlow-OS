@@ -54,6 +54,14 @@ flowchart LR
 | Slack | post message, read channel history | Bot token; messages go to `SLACK_CHANNEL_ID`. |
 | Gemini | describe a routine | Receives only the DNA summary (apps, step types, parameter names and sample values), never raw events. |
 
+## Access control
+
+- **People** sign in with email and password (Argon2id hashes). The session is a random token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` when `COOKIE_SECURE=true`); only its SHA-256 is stored, it expires after `SESSION_TTL_HOURS`, and changing a user's role or password, or disabling them, ends their sessions. Failed sign-ins are rate limited per email and per client address.
+- **Roles** are ordered: viewer < approver < admin. Every API route is authorized by one app-wide dependency against `ROUTE_POLICY` in `security.py`; a route missing from that table is admin-only, and a test fails if any route is unlisted.
+- **CSRF**: state-changing requests with the session cookie must carry the `X-WorkflowOS-CSRF` header, which cross-site forms cannot send; CORS only admits the dashboard's origin (`FRONTEND_ORIGINS`).
+- **API keys** (`wfos_…`, SHA-256 stored, revocable) let the desktop agent and browser extension send activity events and nothing else.
+- Approvals, run decisions and executions record the signed-in user, not a name supplied by the client.
+
 ## Safety model
 
 - **Two decisions by a person**: approving the workflow, and approving each triggered run (manual runs ask for confirmation in the UI).
@@ -72,7 +80,7 @@ SQLite: one database for WorkFlowOS (events, workflows, plans, executions, verif
 
 ## Current limits
 
-- Single user; the API has no authentication and is meant for a trusted machine or private network.
+- Connection secrets (Gmail token, Slack token) are still read from files and environment variables rather than an encrypted store.
 - Interpretations are cached in memory, so after a restart a routine is re-interpreted before a new workflow is created from it (existing workflows are unaffected).
 - Only catalog actions execute; other observed activity is kept as context. Browser, accessibility and UI-automation strategies are modelled but have no executor.
 - Gmail is polled, not pushed.

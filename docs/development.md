@@ -24,6 +24,22 @@ pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
 
 The full API reference (every endpoint, with request and response schemas) is the interactive OpenAPI page at `/docs`.
 
+## Accounts
+
+There is no sign-up page. Create the first admin from the command line, then add other people in **Settings**:
+
+```bash
+python backend/app/cli.py create-user --email you@example.com --name "Your Name" --role admin
+python backend/app/cli.py set-password --email you@example.com   # reset a password (signs them out)
+python backend/app/cli.py list-users
+```
+
+The password is asked for interactively, or read from `WORKFLOWOS_NEW_PASSWORD` in scripts. Passwords need at least 12 characters.
+
+Auth settings: `FRONTEND_ORIGINS` (the dashboard's address; the API only accepts credentialed requests from these origins), `COOKIE_SECURE` (set to `true` behind HTTPS), `SESSION_TTL_HOURS`, `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS`.
+
+Open the dashboard on the same host name as the API (for example both on `localhost`): the session cookie is not sent between `localhost` and `127.0.0.1`.
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Real environment variables override `.env`. Every setting is optional; without an integration the related steps stop safely with a clear reason instead of running.
@@ -72,9 +88,9 @@ Create a Slack app with a bot token that has `chat:write` (and `channels:history
   python -m desktop_agent.agent
   ```
 
-  Settings: `ENABLE_REAL_COLLECTION`, `WINDOW_POLL_INTERVAL`, `WINDOW_DEBOUNCE_SECONDS`, `FILE_WATCH_DIRECTORY`, `BACKEND_API_URL`.
+  Settings: `WORKFLOWOS_API_KEY` (create it in **Settings → API keys**), `ENABLE_REAL_COLLECTION`, `WINDOW_POLL_INTERVAL`, `WINDOW_DEBOUNCE_SECONDS`, `FILE_WATCH_DIRECTORY`, `BACKEND_API_URL`.
 
-- **Browser extension** (Gmail searches and downloads, CRM pages and updates, Slack sends): open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and select `desktop-agent/browser_extension`. Its options page sets the backend URL. It never reads email bodies, attachment contents or message text.
+- **Browser extension** (Gmail searches and downloads, CRM pages and updates, Slack sends): open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and select `desktop-agent/browser_extension`. In its options page, set the backend URL and paste an API key. It never reads email bodies, attachment contents or message text.
 
 Do the routine a few times with a couple of minutes between attempts; the Activity page then lists it under *Repeated routines*.
 
@@ -85,7 +101,7 @@ Do the routine a few times with a couple of minutes between attempts; the Activi
 python -m pytest tests -q
 ```
 
-Tests use throwaway databases and strip secrets, so they never touch your data or live services. Tests that call real Gemini, Slack or Gmail are marked `live` and run only with `WORKFLOWOS_LIVE_TESTS=1`.
+Tests use throwaway databases and strip secrets, so they never touch your data or live services. API tests run as a signed-in admin; tests marked `real_auth` (see `tests/backend/test_auth.py`) use real sign-in, sessions, roles and API keys. Tests that call real Gemini, Slack or Gmail are marked `live` and run only with `WORKFLOWOS_LIVE_TESTS=1`.
 
 Frontend type-check and production build:
 

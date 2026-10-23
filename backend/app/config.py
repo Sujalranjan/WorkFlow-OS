@@ -38,6 +38,20 @@ GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "5"))
 TRIGGER_POLLER_ENABLED = os.getenv("TRIGGER_POLLER_ENABLED", "true").lower() in ("true", "1", "yes")
 TRIGGER_POLLER_TICK_SECONDS = float(os.getenv("TRIGGER_POLLER_TICK_SECONDS", "15"))
 
+# Authentication
+SESSION_COOKIE_NAME = "wfos_session"
+SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "12"))
+# Send the session cookie only over HTTPS. Set to true whenever the app is served over HTTPS.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "900"))
+# Browser origins allowed to call the API with credentials (the dashboard's address).
+FRONTEND_ORIGINS = [
+    o.strip()
+    for o in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+
 # Slack API Integration Configuration
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")

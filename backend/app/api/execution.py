@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.models.execution import (
@@ -57,6 +57,7 @@ from app.repositories.execution_plan_repository import ExecutionPlanRepository
 from app.repositories.execution_repository import ExecutionRepository
 from app.repositories.verification_repository import VerificationRepository
 from app.services.dry_run_simulator import DryRunSimulator
+from app.security import current_actor
 from app.services.execution_engine import ExecutionEngine
 from app.services.execution_planner import ExecutionPlanner
 from app.services.verification_engine import VerificationEngine
@@ -188,9 +189,10 @@ execution_engine = ExecutionEngine(
     status_code=status.HTTP_200_OK,
     summary="Execute an approved execution plan through controlled local executor",
 )
-async def execute_plan(
+def execute_plan(
     execution_plan_id: str,
     request: Optional[ExecutePlanRequest] = None,
+    actor: str = Depends(current_actor),
 ) -> ExecutionAuditRecord:
     """Executes an approved ExecutionPlan with strict backend security guardrails.
 
@@ -207,6 +209,7 @@ async def execute_plan(
             idempotency_key=idempotency_key,
             execution_mode=execution_mode,
             custom_sandbox_dir=custom_sandbox,
+            executed_by=actor,
         )
         return record
     except ValueError as e:

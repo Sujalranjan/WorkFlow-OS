@@ -55,6 +55,25 @@ def pytest_configure(config):
         "markers",
         "live: talks to real external services (Gemini/Slack/Gmail); run with WORKFLOWOS_LIVE_TESTS=1",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_auth: exercise real sign-in, sessions, roles and API keys instead of the test admin",
+    )
+
+
+TEST_ADMIN_EMAIL = "test-admin@example.com"
+
+
+@pytest.fixture(autouse=True)
+def _signed_in_as_test_admin(request, monkeypatch):
+    """API tests about workflows run as a signed-in admin; `real_auth` tests use real credentials."""
+    if request.node.get_closest_marker("real_auth"):
+        return
+    from app import security
+    from app.models.auth import Principal, Role, User
+
+    admin = Principal(kind="user", user=User(email=TEST_ADMIN_EMAIL, name="Test Admin", role=Role.ADMIN))
+    monkeypatch.setattr(security, "resolve_principal", lambda _request: admin)
 
 
 def pytest_collection_modifyitems(config, items):

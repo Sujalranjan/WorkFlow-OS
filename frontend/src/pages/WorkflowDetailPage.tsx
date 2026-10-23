@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import {
   approveWorkflow,
   dryRunPlan,
@@ -17,7 +17,6 @@ import {
   Alert,
   Badge,
   Loading,
-  OperatorContext,
   PageHeader,
   actionLabel,
   formatTime,
@@ -27,11 +26,13 @@ import {
   riskTone,
   useAction,
   useLoad,
+  useSession,
+  CAN,
 } from '../ui';
 
 export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowId }) => {
   const wf = useLoad(() => getWorkflow(workflowId), [workflowId]);
-  const operator = useContext(OperatorContext);
+  const { can } = useSession();
   const action = useAction();
 
   if (wf.loading && !wf.data) return <Loading />;
@@ -65,16 +66,16 @@ export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowI
       {action.error && <Alert>{action.error}</Alert>}
       {action.notice && <Alert tone="ok">{action.notice}</Alert>}
 
-      {(state === 'requires_review' || state === 'draft') && (
+      {(state === 'requires_review' || state === 'draft') && can(CAN.reviewWorkflow) && (
         <ReviewPanel
           busy={action.busy}
           onApprove={() =>
-            action.run('approve', () => approveWorkflow(spec.workflow_id, operator), 'Approved. You can now run it.').then(
+            action.run('approve', () => approveWorkflow(spec.workflow_id), 'Approved. You can now run it.').then(
               () => wf.reload(),
             )
           }
           onReject={(reason) =>
-            action.run('reject', () => rejectWorkflow(spec.workflow_id, operator, reason), 'Rejected.').then(() =>
+            action.run('reject', () => rejectWorkflow(spec.workflow_id, reason), 'Rejected.').then(() =>
               wf.reload(),
             )
           }
@@ -143,7 +144,7 @@ export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowI
         </section>
       )}
 
-      {state === 'approved' && <RunPanel spec={spec} />}
+      {state === 'approved' && can(CAN.runWorkflow) && <RunPanel spec={spec} />}
       {state === 'approved' && <ReliabilityPanel workflowId={spec.workflow_id} />}
     </>
   );
@@ -160,8 +161,8 @@ const ReviewPanel: React.FC<{
     <section className="card card-highlight">
       <h2>Review this workflow</h2>
       <p className="muted">
-        Check the steps below. Approving lets it run when you (or an email trigger) start it; every live run still
-        asks for confirmation.
+        Check the steps below. Approving lets it run when someone starts it or an email trigger picks up a matching
+        email; every live run still needs a confirmation.
       </p>
       {rejecting ? (
         <div className="inline-form">

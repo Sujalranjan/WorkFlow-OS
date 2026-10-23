@@ -80,6 +80,7 @@ class ExecutionEngine:
         idempotency_key: Optional[str] = None,
         execution_mode: ExecutionMode = ExecutionMode.LIVE,
         custom_sandbox_dir: Optional[str] = None,
+        executed_by: str = "workflowos-engine",
     ) -> ExecutionAuditRecord:
         """Executes an approved execution plan through controlled executors."""
         # 1. Idempotency Check
@@ -129,6 +130,7 @@ class ExecutionEngine:
             affected_resources=[],
             error_summary=None,
             idempotency_key=idempotency_key,
+            executed_by=executed_by,
         )
         self.exec_repo.save(audit_record)
 

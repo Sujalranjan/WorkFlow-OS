@@ -14,18 +14,18 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.models.automation import (
     CreateTriggerRequest,
     EmailTrigger,
     PollResult,
     ResumeRunRequest,
-    RunDecisionRequest,
     RunStatus,
     UpdateTriggerRequest,
     WorkflowRun,
 )
+from app.security import current_actor
 from app.services.trigger_service import TriggerError, TriggerService
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
@@ -102,15 +102,15 @@ def get_run(run_id: str) -> WorkflowRun:
 
 
 @router.post("/runs/{run_id}/approve", response_model=WorkflowRun)
-def approve_run(run_id: str, req: Optional[RunDecisionRequest] = None) -> WorkflowRun:
-    return _call(get_trigger_service().approve_run, run_id, (req or RunDecisionRequest()).decided_by)
+def approve_run(run_id: str, actor: str = Depends(current_actor)) -> WorkflowRun:
+    return _call(get_trigger_service().approve_run, run_id, actor)
 
 
 @router.post("/runs/{run_id}/resume", response_model=WorkflowRun)
-def resume_run(run_id: str, req: ResumeRunRequest) -> WorkflowRun:
-    return _call(get_trigger_service().resume_run, run_id, req.inputs, req.decided_by)
+def resume_run(run_id: str, req: ResumeRunRequest, actor: str = Depends(current_actor)) -> WorkflowRun:
+    return _call(get_trigger_service().resume_run, run_id, req.inputs, actor)
 
 
 @router.post("/runs/{run_id}/reject", response_model=WorkflowRun)
-def reject_run(run_id: str, req: Optional[RunDecisionRequest] = None) -> WorkflowRun:
-    return _call(get_trigger_service().reject_run, run_id, (req or RunDecisionRequest()).decided_by)
+def reject_run(run_id: str, actor: str = Depends(current_actor)) -> WorkflowRun:
+    return _call(get_trigger_service().reject_run, run_id, actor)

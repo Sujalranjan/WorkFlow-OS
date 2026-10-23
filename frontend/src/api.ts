@@ -13,7 +13,13 @@ import {
 import { WorkflowReliabilityProfile } from './types/learning';
 import { EmailTrigger, PollResult, RunStatus, WorkflowRun } from './types/automation';
 
-export const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
+// Same host name as the dashboard by default: the session cookie is only sent between pages and an
+// API on the same site (localhost vs 127.0.0.1 count as different sites).
+export const API_BASE =
+  import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+
+/** Fired when the API says the session is missing or expired; the app shows the sign-in page. */
+export const UNAUTHORIZED_EVENT = 'workflowos:unauthorized';
 
 // Discovery settings shared by every call so patterns and their workflows line up.
 const DISCOVERY = { limit: '500', inactivity_timeout: '120', min_occurrences: '2', similarity_threshold: '0.65' };
@@ -23,10 +29,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-WorkflowOS-CSRF': '1', ...(init?.headers || {}) },
     });
   } catch {
     throw new Error(`Cannot reach the WorkFlowOS backend at ${API_BASE}. Is it running?`);
+  }
+  if (res.status === 401 && path !== '/api/auth/login') {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -99,14 +109,11 @@ export const listWorkflows = () =>
 export const getWorkflow = (id: string) =>
   request<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}`);
 
-export const approveWorkflow = (id: string, reviewer: string) =>
-  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/approve`, { reviewer });
+export const approveWorkflow = (id: string) =>
+  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/approve`, {});
 
-export const rejectWorkflow = (id: string, reviewer: string, reason: string) =>
-  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/reject`, {
-    reviewer,
-    reason,
-  });
+export const rejectWorkflow = (id: string, reason: string) =>
+  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/reject`, { reason });
 
 export const planWorkflow = (id: string, runtimeParameters?: Record<string, string>) =>
   post<ExecutionPlan>(`/api/workflows/specifications/${encodeURIComponent(id)}/execution-plan`, {
@@ -167,11 +174,54 @@ export const listRuns = (statuses?: RunStatus[], limit = 100) => {
   return request<WorkflowRun[]>(`/api/automation/runs?${params}`);
 };
 
-export const approveRun = (id: string, decidedBy: string) =>
-  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/approve`, { decided_by: decidedBy });
+export const approveRun = (id: string) => post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/approve`);
 
-export const rejectRun = (id: string, decidedBy: string) =>
-  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/reject`, { decided_by: decidedBy });
+export const rejectRun = (id: string) => post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/reject`);
 
-export const resumeRun = (id: string, inputs: Record<string, string>, decidedBy: string) =>
-  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/resume`, { inputs, decided_by: decidedBy });
+export const resumeRun = (id: string, inputs: Record<string, string>) =>
+  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/resume`, { inputs });
+
+// --- auth ---------------------------------------------------------------------------
+
+export type Role = 'viewer' | 'approver' | 'admin';
+
+export interface User {
+  user_id: string;
+  email: string;
+  name: string;
+  role: Role;
+  active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface Session {
+  user: User;
+  /** "METHOD /path/template" entries this user may call. */
+  permissions: string[];
+}
+
+export interface ApiKey {
+  key_id: string;
+  name: string;
+  prefix: string;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export const login = (email: string, password: string) => post<Session>('/api/auth/login', { email, password });
+export const logout = () => post<void>('/api/auth/logout');
+export const getSession = () => request<Session>('/api/auth/me');
+
+export const listUsers = () => request<User[]>('/api/auth/users');
+export const createUser = (input: { email: string; name: string; role: Role; password: string }) =>
+  post<User>('/api/auth/users', input);
+export const updateUser = (id: string, changes: Partial<{ name: string; role: Role; active: boolean; password: string }>) =>
+  request<User>(`/api/auth/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(changes) });
+
+export const listApiKeys = () => request<ApiKey[]>('/api/auth/api-keys');
+export const createApiKey = (name: string) => post<{ key: string; api_key: ApiKey }>('/api/auth/api-keys', { name });
+export const revokeApiKey = (id: string) =>
+  request<ApiKey>(`/api/auth/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });

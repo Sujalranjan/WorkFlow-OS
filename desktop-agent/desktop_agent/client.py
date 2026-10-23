@@ -10,9 +10,13 @@ from desktop_agent.models.event import ActivityEvent
 class BackendClient:
     """Client for sending activity events to the WorkFlowOS backend."""
 
-    def __init__(self, backend_url: Optional[str] = None, timeout: float = 5.0) -> None:
+    def __init__(
+        self, backend_url: Optional[str] = None, timeout: float = 5.0, api_key: Optional[str] = None
+    ) -> None:
         raw_url = backend_url or os.getenv("BACKEND_API_URL") or os.getenv("BACKEND_URL") or "http://127.0.0.1:8000"
         self.backend_url = raw_url.rstrip("/")
+        # Created in WorkFlowOS Settings; it can only send activity events.
+        self.api_key = api_key if api_key is not None else os.getenv("WORKFLOWOS_API_KEY", "")
         self.events_endpoint = f"{self.backend_url}/api/events"
         self.timeout = timeout
 
@@ -27,7 +31,7 @@ class BackendClient:
                     self.events_endpoint,
                     json=payload,
                     timeout=self.timeout,
-                    headers={"Content-Type": "application/json"},
+                    headers=self._headers(),
                 )
                 response.raise_for_status()
                 return response.json()
@@ -40,3 +44,9 @@ class BackendClient:
                         f"Failed to deliver event {event.event_id} to {self.events_endpoint} after {retries + 1} attempts: {exc}"
                     ) from last_error
         raise RuntimeError("Unexpected failure in send_event")
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers

@@ -222,6 +222,7 @@ class TriggerService:
                 execution_plan_id=plan.execution_plan_id,
                 idempotency_key=f"workflow-run:{run.run_id}",
                 execution_mode=ExecutionMode.LIVE,
+                executed_by=decided_by,
             )
         except Exception as e:  # noqa: BLE001 - the run must never be left stuck in RUNNING
             logger.warning("Run %s could not execute: %s", run_id, e)

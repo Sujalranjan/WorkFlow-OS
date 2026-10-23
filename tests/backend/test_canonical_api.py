@@ -14,6 +14,7 @@ from app.repositories.event_repository import EventRepository
 from app.services.event_service import EventService
 from app.services.semantic_engine import SemanticUnderstandingEngine
 from app.services.semantic_provider import MockSemanticProvider
+from tests.conftest import TEST_ADMIN_EMAIL
 from tests.fixtures.discovery_fixtures import generate_deterministic_dataset
 
 
@@ -119,7 +120,8 @@ def test_canonical_api_workflow_lifecycle(test_client_and_setup) -> None:
     assert approve_resp.status_code == 200
     approved_data = approve_resp.json()
     assert approved_data["approval_state"]["state"] == "approved"
-    assert approved_data["approval_state"]["reviewed_by"] == "operations_lead@company.com"
+    # The signed-in user is recorded, not the reviewer name sent in the request body.
+    assert approved_data["approval_state"]["reviewed_by"] == TEST_ADMIN_EMAIL
     assert approved_data["approval_state"]["reviewed_at"] is not None
 
     # 8. Reject Endpoint test on a second copy

@@ -15,7 +15,9 @@ const MAX_QUEUE = 500;
 
 async function settings() {
   const s = await chrome.storage.sync.get({ backendUrl: DEFAULT_BACKEND_URL, crmOrigins: DEFAULT_CRM_ORIGINS });
-  return { backendUrl: s.backendUrl.replace(/\/+$/, ""), crmOrigins: s.crmOrigins };
+  // The API key stays in local (not synced) storage.
+  const { apiKey = "" } = await chrome.storage.local.get("apiKey");
+  return { backendUrl: s.backendUrl.replace(/\/+$/, ""), crmOrigins: s.crmOrigins, apiKey };
 }
 
 function hostMatches(url, hosts) {
@@ -63,20 +65,25 @@ function post(event) {
 }
 
 async function flush(event) {
-  const { backendUrl } = await settings();
+  const { backendUrl, apiKey } = await settings();
   const { [QUEUE_KEY]: queued = [] } = await chrome.storage.local.get(QUEUE_KEY);
+  if (!apiKey) {
+    // Not set up yet: keep events until an API key is saved in the options page.
+    await chrome.storage.local.set({ [QUEUE_KEY]: [...queued, event].slice(-MAX_QUEUE) });
+    return;
+  }
   const pending = [...queued, event];
   const remaining = [];
   for (const e of pending) {
     try {
       const res = await fetch(`${backendUrl}/api/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(e),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      remaining.push(e); // backend offline: keep for the next attempt
+      remaining.push(e); // backend offline or key rejected: keep for the next attempt
     }
   }
   await chrome.storage.local.set({ [QUEUE_KEY]: remaining.slice(-MAX_QUEUE) });

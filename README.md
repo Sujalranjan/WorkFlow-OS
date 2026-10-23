@@ -54,6 +54,10 @@ docker compose up --build
 
 This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). Data is kept in the `workflowos-data` volume.
 
+- Create the first admin (there is no sign-up page; admins add everyone else in **Settings**):
+  ```bash
+  docker compose exec api python -m app.cli create-user --email you@example.com --name "Your Name" --role admin
+  ```
 - Integrations are read from `.env` if it exists (copy `.env.example`).
 - For Gmail, create `token.json` on your machine first (the sign-in opens a browser, so it can't run inside a container), then put `credentials.json` and `token.json` in a `secrets/` folder next to `docker-compose.yml`.
 - The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
@@ -78,9 +82,13 @@ pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
    ```bash
    cd frontend && npm install && npm run dev
    ```
-4. **Observe real activity**
-   - Desktop agent (window focus and file events): `python -m desktop_agent.agent` with `PYTHONPATH=".;backend;desktop-agent"`.
-   - Browser extension: open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and pick `desktop-agent/browser_extension`. Its options page sets the backend URL.
+4. **First admin** (asks for a password of at least 12 characters), then sign in at http://localhost:5173:
+   ```bash
+   python backend/app/cli.py create-user --email you@example.com --name "Your Name" --role admin
+   ```
+5. **Observe real activity.** In **Settings → API keys**, create a key. The agent and extension can only *send* activity with it.
+   - Desktop agent (window focus and file events): set `WORKFLOWOS_API_KEY` in `.env`, then `python -m desktop_agent.agent` with `PYTHONPATH=".;backend;desktop-agent"`.
+   - Browser extension: open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and pick `desktop-agent/browser_extension`. In its options page, set the backend URL and paste the key.
 
    Then do the routine by hand a few times (at least 2 sessions, separated by 2+ minutes of inactivity).
 
@@ -98,6 +106,9 @@ Open `http://localhost:5173`. The sidebar follows the life of a workflow:
 | **Inbox** | Approve emails picked up by a trigger, and answer runs that paused (for example, choose which CRM customer an email is about). |
 | **Automations** | Create email triggers that start a workflow when a matching email arrives. |
 | **Runs** | Every run, step by step, and whether the result was verified afterwards. |
+| **Settings** (admins) | Add people and set their role; create and revoke API keys for the agent and extension. |
+
+**Roles:** *viewers* see everything; *approvers* can also create, approve and run workflows and answer paused runs; *admins* can also manage email triggers, users and API keys. Approvals and runs record who did them.
 
 Without `GEMINI_API_KEY`, routines are described by built-in rules from what was observed; with a key, Gemini writes the description and its output is checked against the observation before use.
 

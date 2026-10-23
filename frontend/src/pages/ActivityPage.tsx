@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createWorkflowFromRoutine, listEvents, listRoutineStructures, listWorkflows, loadSampleActivity } from '../api';
 import { WorkflowDNA } from '../types/dna';
 import { CanonicalWorkflowSpec } from '../types/canonical';
-import { Alert, Badge, Empty, Loading, PageHeader, actionLabel, describeEvent, formatTime, go, href, useAction, useLoad } from '../ui';
+import { Alert, Badge, CAN, Empty, Loading, PageHeader, actionLabel, describeEvent, formatTime, go, href, useAction, useLoad, useSession } from '../ui';
 
 const PAGE = 50;
 
@@ -13,6 +13,7 @@ export const ActivityPage: React.FC = () => {
     return { dna: dna.dna_items, workflows };
   }, []);
   const action = useAction();
+  const { can } = useSession();
   const [shown, setShown] = useState(PAGE);
 
   const reloadAll = () => {
@@ -51,6 +52,7 @@ export const ActivityPage: React.FC = () => {
                   (w) => w.source_dna_id === dna.dna_id && w.approval_state.state !== 'rejected',
                 )}
                 busy={action.busy}
+                canCreate={can(CAN.createWorkflow)}
                 onCreate={() =>
                   action.run(`create-${dna.dna_id}`, async () => {
                     const wf = await createWorkflowFromRoutine(dna.dna_id);
@@ -83,8 +85,8 @@ export const ActivityPage: React.FC = () => {
               Start the desktop agent (<code>python -m desktop_agent.agent</code>) and load the browser extension from{' '}
               <code>desktop-agent/browser_extension</code>, then do your routine as usual. See the README for setup.
             </p>
-            <p>Just exploring? Load three recorded sessions of a Gmail → CRM → Slack routine:</p>
-            <button
+            {can(CAN.loadSample) && <p>Just exploring? Load three recorded sessions of a Gmail → CRM → Slack routine:</p>}
+            {can(CAN.loadSample) && <button
               disabled={action.busy !== null}
               onClick={() =>
                 action.run('sample', async () => {
@@ -95,7 +97,7 @@ export const ActivityPage: React.FC = () => {
               }
             >
               {action.busy === 'sample' ? 'Loading…' : 'Load sample activity'}
-            </button>
+            </button>}
           </Empty>
         ) : (
           <>
@@ -138,8 +140,9 @@ const RoutineCard: React.FC<{
   dna: WorkflowDNA;
   workflow?: CanonicalWorkflowSpec;
   busy: string | null;
+  canCreate: boolean;
   onCreate: () => void;
-}> = ({ dna, workflow, busy, onCreate }) => {
+}> = ({ dna, workflow, busy, canCreate, onCreate }) => {
   const steps = dna.invariant_steps;
   const apps = Array.from(new Set(steps.map((s) => s.application)));
   const minutes = Math.max(1, Math.round((dna.boundaries.average_duration_seconds || 0) / 60));
@@ -161,11 +164,11 @@ const RoutineCard: React.FC<{
               Open workflow
             </a>
           </div>
-        ) : (
+        ) : canCreate ? (
           <button disabled={busy !== null} onClick={onCreate}>
             {busy === `create-${dna.dna_id}` ? 'Creating…' : 'Create workflow'}
           </button>
-        )}
+        ) : null}
       </div>
       <ol className="step-chips">
         {steps.map((s) => (
