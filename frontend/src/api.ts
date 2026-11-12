@@ -225,3 +225,38 @@ export const listApiKeys = () => request<ApiKey[]>('/api/auth/api-keys');
 export const createApiKey = (name: string) => post<{ key: string; api_key: ApiKey }>('/api/auth/api-keys', { name });
 export const revokeApiKey = (id: string) =>
   request<ApiKey>(`/api/auth/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+// --- integrations (Settings) ----------------------------------------------------------
+
+export interface Integrations {
+  gmail: {
+    connected: boolean;
+    source: 'settings' | 'file' | null;
+    account: string | null;
+    connected_at: string | null;
+    connected_by: string | null;
+    client_configured: boolean;
+    client_source: 'settings' | 'file' | null;
+    client_id: string | null;
+    redirect_uri: string;
+  };
+  slack: {
+    configured: boolean;
+    source: 'settings' | 'environment' | null;
+    channel_id: string | null;
+    team: string | null;
+    updated_at: string | null;
+    updated_by: string | null;
+  };
+}
+
+export const getIntegrations = () => request<Integrations>('/api/integrations');
+export const saveGmailClient = (client_id: string, client_secret: string) =>
+  request<Integrations>('/api/integrations/gmail/client', { method: 'PUT', body: JSON.stringify({ client_id, client_secret }) });
+export const removeGmailClient = () => request<Integrations>('/api/integrations/gmail/client', { method: 'DELETE' });
+export const startGmailConnect = () =>
+  post<{ authorization_url: string }>('/api/integrations/gmail/connect', { return_to: window.location.origin });
+export const disconnectGmail = () => request<Integrations>('/api/integrations/gmail', { method: 'DELETE' });
+export const saveSlack = (bot_token: string, channel_id: string) =>
+  request<Integrations>('/api/integrations/slack', { method: 'PUT', body: JSON.stringify({ bot_token, channel_id }) });
+export const removeSlack = () => request<Integrations>('/api/integrations/slack', { method: 'DELETE' });

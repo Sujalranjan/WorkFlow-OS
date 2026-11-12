@@ -52,6 +52,20 @@ FRONTEND_ORIGINS = [
     if o.strip()
 ]
 
+# Integration credentials (Gmail OAuth token, Slack bot token) are encrypted in the database with
+# WORKFLOWOS_SECRET_KEY, or with a key file created next to the database on first use.
+SECRET_KEY_PATH = os.getenv("SECRET_KEY_PATH")
+
+
+def secret_key_path() -> str:
+    return SECRET_KEY_PATH or os.path.join(os.path.dirname(os.path.abspath(DATABASE_PATH)), "workflowos.secret.key")
+
+
+# The API's address as seen from the user's browser; Google redirects here after "Connect Gmail".
+# Register PUBLIC_API_URL + /api/integrations/gmail/callback as a redirect URI on the OAuth client.
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", f"http://localhost:{PORT}").rstrip("/")
+GMAIL_OAUTH_REDIRECT_URI = f"{PUBLIC_API_URL}/api/integrations/gmail/callback"
+
 # Slack API Integration Configuration
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")

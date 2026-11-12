@@ -172,7 +172,7 @@ def test_poll_records_error_when_gmail_not_authorized(h):
     h.gmail.is_authenticated.return_value = False
     trigger = h.trigger()
     result = h.service.poll(trigger.trigger_id)
-    assert result.new_runs == [] and "not authorized" in result.error
+    assert result.new_runs == [] and "not connected" in result.error
     assert h.service.repo.get_trigger(trigger.trigger_id).last_error == result.error
     h.gmail.search_messages.assert_not_called()
 

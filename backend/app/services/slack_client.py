@@ -28,6 +28,12 @@ SLACK_API_BASE_URL = os.getenv("SLACK_API_BASE_URL", "https://slack.com/api").rs
 CHANNEL_REGEX = re.compile(r"^[A-Z0-9#\-_]{2,80}$", re.IGNORECASE)
 
 
+def _stored_settings() -> Tuple[Optional[str], Optional[str]]:
+    from app.services.integrations import stored_slack_settings
+
+    return stored_slack_settings()
+
+
 class SlackClientError(Exception):
     """Base exception for Slack API Client errors."""
     pass
@@ -71,11 +77,34 @@ class SlackApiClient:
         timeout: float = 10.0,
         http_client: Optional[httpx.Client] = None,
     ) -> None:
-        self._bot_token = bot_token or os.getenv("SLACK_BOT_TOKEN")
-        self.default_channel_id = default_channel_id or os.getenv("SLACK_CHANNEL_ID")
+        # Precedence: explicit arguments, then Settings (encrypted store), then environment.
+        # Resolved on every use, so long-lived clients (the executor registry) pick up changes
+        # made in Settings without a restart.
+        self._explicit_token = bot_token
+        self._explicit_channel = default_channel_id
         self.base_url = (base_url or SLACK_API_BASE_URL).rstrip("/")
         self.timeout = timeout
         self._custom_client = http_client
+
+    @property
+    def _bot_token(self) -> Optional[str]:
+        if self._explicit_token:
+            return self._explicit_token
+        stored_token, _ = _stored_settings()
+        return stored_token or os.getenv("SLACK_BOT_TOKEN")
+
+    @property
+    def default_channel_id(self) -> Optional[str]:
+        if self._explicit_channel:
+            return self._explicit_channel
+        if self._explicit_token:
+            return os.getenv("SLACK_CHANNEL_ID")
+        stored_token, stored_channel = _stored_settings()
+        return stored_channel if stored_token else os.getenv("SLACK_CHANNEL_ID")
+
+    @default_channel_id.setter
+    def default_channel_id(self, value: Optional[str]) -> None:
+        self._explicit_channel = value
 
     def _get_client(self) -> httpx.Client:
         """Returns the configured HTTP client."""
@@ -107,6 +136,18 @@ class SlackApiClient:
                 f"Invalid Slack channel format '{target_clean}'. Must be alphanumeric channel ID or valid channel name."
             )
         return target_clean
+
+    def identify(self) -> Optional[Dict[str, Any]]:
+        """auth.test result ({'team', 'user', ...}) if the token is valid, else None."""
+        if not self._bot_token:
+            return None
+        try:
+            headers = self._get_auth_headers()
+            with self._get_client() as client:
+                data = client.post(f"{self.base_url}/auth.test", headers=headers).json()
+        except Exception:
+            return None
+        return data if data.get("ok") is True else None
 
     def is_healthy(self) -> bool:
         """Checks Slack API connectivity via auth.test."""

@@ -43,6 +43,16 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("POST", "/api/auth/api-keys"): AD,
     ("DELETE", "/api/auth/api-keys/{key_id}"): AD,
     ("GET", "/api/status"): V,
+    # integration credentials (Settings). The Gmail callback is a browser redirect from Google,
+    # authenticated by its single-use OAuth state instead of a session.
+    ("GET", "/api/integrations"): AD,
+    ("PUT", "/api/integrations/gmail/client"): AD,
+    ("DELETE", "/api/integrations/gmail/client"): AD,
+    ("POST", "/api/integrations/gmail/connect"): AD,
+    ("GET", "/api/integrations/gmail/callback"): PUBLIC,
+    ("DELETE", "/api/integrations/gmail"): AD,
+    ("PUT", "/api/integrations/slack"): AD,
+    ("DELETE", "/api/integrations/slack"): AD,
     # sample data and resets change shared state
     ("POST", "/api/demo/seed-activity"): AD,
     ("POST", "/api/demo/reset"): AD,

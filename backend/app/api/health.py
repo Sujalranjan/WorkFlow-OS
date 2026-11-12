@@ -1,6 +1,5 @@
 """Health and integration status endpoints."""
 
-import os
 from typing import Any, Dict
 
 from fastapi import APIRouter
@@ -33,15 +32,15 @@ def get_integration_status() -> Dict[str, Any]:
 
     gmail = GmailApiClient()
     if not gmail.is_configured():
-        gmail_status = _integration(False, "Not set up: add credentials.json and set GMAIL_ENABLED=true.")
+        gmail_status = _integration(False, "Not set up: use Connect Gmail in Settings.")
     elif not gmail.is_authenticated():
-        gmail_status = _integration(False, "Sign-in needed: run the Gmail authorization script to create token.json.")
+        gmail_status = _integration(False, "Sign-in needed: use Connect Gmail in Settings.")
     else:
         gmail_status = _integration(*gmail.check_access())
 
     slack = SlackApiClient(timeout=3.0)
-    if not os.getenv("SLACK_BOT_TOKEN") or not os.getenv("SLACK_CHANNEL_ID"):
-        slack_status = _integration(False, "Not set up: set SLACK_BOT_TOKEN and SLACK_CHANNEL_ID.")
+    if not slack._bot_token or not slack.default_channel_id:
+        slack_status = _integration(False, "Not set up: add a bot token and channel in Settings.")
     elif slack.is_healthy():
         slack_status = _integration(True, f"Posting to channel {slack.default_channel_id}.")
     else:

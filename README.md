@@ -58,8 +58,9 @@ This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost
   ```bash
   docker compose exec api python -m app.cli create-user --email you@example.com --name "Your Name" --role admin
   ```
-- Integrations are read from `.env` if it exists (copy `.env.example`).
-- For Gmail, create `token.json` on your machine first (the sign-in opens a browser, so it can't run inside a container), then put `credentials.json` and `token.json` in a `secrets/` folder next to `docker-compose.yml`.
+- Connect Gmail and Slack in **Settings > Integrations** (see [Integrations](#integrations)). Credentials are stored encrypted in the data volume; the encryption key is created there too (`/data/workflowos.secret.key`) unless you set `WORKFLOWOS_SECRET_KEY`.
+- Ports already in use? `API_PORT=8010 WEB_PORT=5180 CRM_PORT=8011 docker compose up --build`. The Gmail redirect URI follows `API_PORT` (`http://localhost:8010/api/integrations/gmail/callback`).
+- Other settings are read from `.env` if it exists (copy `.env.example`).
 - The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
 - Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
 
@@ -127,11 +128,19 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 | Service | Configure | Notes |
 |---|---|---|
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
-| Gmail (read-only) | `credentials.json` (OAuth client) + `GMAIL_ENABLED=true` | Sign in: `python scripts/gmail_login.py` (`--force` to replace an expired sign-in) |
-| Slack | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` | Bot needs `chat:write` (+ `channels:history` for verification) |
+| Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
+| Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification); checked with Slack before saving. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
 
-Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json` or `token.json` (they are git-ignored).
+**Connecting Gmail** (once per installation):
+
+1. In Google Cloud Console, enable the Gmail API and create an OAuth client ID of type **Web application**.
+2. Add the redirect URI shown in Settings as an *authorized redirect URI*: `PUBLIC_API_URL` + `/api/integrations/gmail/callback` (default `http://localhost:8000/api/integrations/gmail/callback`).
+3. Paste the client ID and secret into Settings, click **Connect Gmail**, and approve read-only access.
+
+The sign-in uses PKCE and a single-use state that expires after 10 minutes. Only the `gmail.readonly` scope is requested. **Disconnect** revokes the token at Google.
+
+Credentials saved in Settings are encrypted with `WORKFLOWOS_SECRET_KEY`, or with a key file created next to the database. Back up that key separately from the database: without it, saved integrations must be connected again. Settings take precedence over the older `.env` and `token.json` setup. Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json`, `token.json` or `*.secret.key` (they are git-ignored).
 
 ## Tests
 

@@ -14,6 +14,7 @@ from app.api.dna import router as dna_router
 from app.api.events import router as events_router
 from app.api.execution import router as execution_router
 from app.api.health import router as health_router
+from app.api.integrations import router as integrations_router
 from app.api.learning import router as learning_router
 from app.api.semantic import router as semantic_router
 from app.logging_config import RequestLoggingMiddleware, setup_logging
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(integrations_router)
     app.include_router(demo_router)
     app.include_router(events_router)
     app.include_router(discovery_router)

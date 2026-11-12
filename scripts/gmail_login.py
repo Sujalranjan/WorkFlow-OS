@@ -24,7 +24,8 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="delete the saved token and sign in again")
     args = parser.parse_args()
 
-    client = GmailApiClient()
+    # This script manages token.json only; "Connect Gmail" in Settings is managed from the dashboard.
+    client = GmailApiClient(use_credential_store=False)
     if not os.path.exists(client.credentials_path):
         print(
             f"OAuth client file not found: {client.credentials_path}\n"

@@ -1,6 +1,23 @@
 import React, { useState } from 'react';
-import { Role, User, createApiKey, createUser, listApiKeys, listUsers, revokeApiKey, updateUser } from '../api';
-import { Alert, Badge, Empty, Loading, PageHeader, timeAgo, useAction, useLoad, useSession } from '../ui';
+import {
+  Integrations,
+  Role,
+  User,
+  createApiKey,
+  createUser,
+  disconnectGmail,
+  getIntegrations,
+  listApiKeys,
+  listUsers,
+  removeGmailClient,
+  removeSlack,
+  revokeApiKey,
+  saveGmailClient,
+  saveSlack,
+  startGmailConnect,
+  updateUser,
+} from '../api';
+import { Alert, Badge, Empty, Loading, PageHeader, go, timeAgo, useAction, useLoad, useRoute, useSession } from '../ui';
 
 const ROLE_HELP: Record<Role, string> = {
   viewer: 'Sees everything, changes nothing',
@@ -10,7 +27,11 @@ const ROLE_HELP: Record<Role, string> = {
 
 export const SettingsPage: React.FC = () => (
   <>
-    <PageHeader title="Settings" subtitle="People who can sign in, and keys for the desktop agent and browser extension." />
+    <PageHeader
+      title="Settings"
+      subtitle="Connected services, people who can sign in, and keys for the desktop agent and browser extension."
+    />
+    <IntegrationsSection />
     <UsersSection />
     <ApiKeysSection />
   </>
@@ -251,5 +272,269 @@ const ApiKeysSection: React.FC = () => {
         </ul>
       )}
     </section>
+  );
+};
+
+const GMAIL_ERRORS: Record<string, string> = {
+  expired: 'That sign-in link expired or was already used. Try Connect Gmail again.',
+  denied: 'Google sign-in was cancelled or access was not granted.',
+  exchange_failed: 'Google rejected the sign-in. Check the client ID, secret and that the redirect URI below is registered.',
+  scope: 'Read-only Gmail access was not granted. Tick the Gmail permission on the consent screen.',
+  no_refresh_token:
+    "Google did not issue a long-lived token. Remove WorkFlowOS under your Google Account > Security > Third-party access, then connect again.",
+  client_changed: 'The OAuth client changed during sign-in. Try again.',
+  network: 'The server could not reach Google to finish signing in. Check its internet connection and try again.',
+};
+
+const IntegrationsSection: React.FC = () => {
+  const info = useLoad(getIntegrations, []);
+  const action = useAction();
+  const [, outcome, code] = useRoute();
+  const update = (p: Promise<Integrations | undefined>) => p.then(() => info.reload());
+
+  return (
+    <section className="card">
+      <h2>Integrations</h2>
+      <p className="muted small">
+        Credentials are stored encrypted on the server and are never shown again after saving.
+      </p>
+      {outcome === 'gmail-connected' && (
+        <Alert tone="ok">
+          Gmail connected. <button className="link" onClick={() => go('settings')}>Dismiss</button>
+        </Alert>
+      )}
+      {outcome === 'gmail-error' && (
+        <Alert>
+          {GMAIL_ERRORS[code || ''] || 'Connecting Gmail failed.'}{' '}
+          <button className="link" onClick={() => go('settings')}>Dismiss</button>
+        </Alert>
+      )}
+      {action.error && <Alert>{action.error}</Alert>}
+      {action.notice && <Alert tone="ok">{action.notice}</Alert>}
+      {info.error && <Alert>{info.error}</Alert>}
+      {!info.data ? (
+        <Loading />
+      ) : (
+        <>
+          <GmailCard info={info.data} action={action} update={update} />
+          <SlackCard info={info.data} action={action} update={update} />
+        </>
+      )}
+    </section>
+  );
+};
+
+type CardProps = {
+  info: Integrations;
+  action: ReturnType<typeof useAction>;
+  update: (p: Promise<Integrations | undefined>) => Promise<void>;
+};
+
+const GmailCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const g = info.gmail;
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [changingClient, setChangingClient] = useState(false);
+  const busy = action.busy !== null;
+  const showClientForm = !g.client_configured || changingClient;
+
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Gmail (read-only)</h3>
+        {g.connected ? <Badge status="completed" label="Connected" /> : <Badge status="paused" label="Not connected" />}
+      </div>
+      {g.connected && (
+        <p className="muted small">
+          {g.source === 'settings'
+            ? `${g.account || 'Account'} · connected by ${g.connected_by || 'unknown'} ${timeAgo(g.connected_at)}`
+            : 'Using token.json on the server. Connect here to manage it from the dashboard instead.'}
+        </p>
+      )}
+
+      {showClientForm ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const done = g.connected ? 'OAuth client saved. Click Reconnect Gmail to sign in with it.' : 'OAuth client saved.';
+            update(action.run('gmail-client', () => saveGmailClient(clientId, clientSecret), done)).then(() => {
+              setClientId('');
+              setClientSecret('');
+              setChangingClient(false);
+            });
+          }}
+        >
+          <p className="muted small">
+            In Google Cloud Console, create an OAuth client ID of type <strong>Web application</strong> with this
+            authorized redirect URI, enable the Gmail API, then paste the client ID and secret:
+          </p>
+          <code className="secret">{g.redirect_uri}</code>
+          <div className="form-row">
+            <label className="field">
+              Client ID
+              <input required value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="….apps.googleusercontent.com" />
+            </label>
+            <label className="field">
+              Client secret
+              <input required type="password" autoComplete="off" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              Save OAuth client
+            </button>
+            {changingClient && (
+              <button type="button" className="btn-secondary" onClick={() => setChangingClient(false)}>
+                Cancel
+              </button>
+            )}
+            {changingClient && g.client_source === 'settings' && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                title="Forget the client saved here and use credentials.json on the server, if there is one"
+                onClick={() =>
+                  update(action.run('gmail-client-remove', removeGmailClient, 'Saved OAuth client removed.')).then(() =>
+                    setChangingClient(false)
+                  )
+                }
+              >
+                Remove saved client
+              </button>
+            )}
+          </div>
+          {g.connected && (
+            <p className="muted small">The current connection keeps working until you reconnect with the new client.</p>
+          )}
+        </form>
+      ) : (
+        <>
+          <p className="muted small">
+            OAuth client <code>{g.client_id}</code> ({g.client_source === 'settings' ? 'saved here' : 'from credentials.json'}).
+            Redirect URI: <code>{g.redirect_uri}</code>
+          </p>
+          <div className="actions">
+            <button
+              disabled={busy}
+              onClick={() =>
+                action.run('gmail-connect', startGmailConnect).then((res) => {
+                  if (res) window.location.assign(res.authorization_url);
+                })
+              }
+            >
+              {g.connected ? 'Reconnect Gmail' : 'Connect Gmail'}
+            </button>
+            {g.connected && g.source === 'settings' && (
+              <button
+                className="btn-danger"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm('Disconnect Gmail? Email triggers and Gmail steps stop working until it is connected again.')) {
+                    update(action.run('gmail-disconnect', disconnectGmail, 'Gmail disconnected.'));
+                  }
+                }}
+              >
+                Disconnect
+              </button>
+            )}
+            <button className="btn-secondary" disabled={busy} onClick={() => setChangingClient(true)}>
+              Change OAuth client
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const SlackCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const sl = info.slack;
+  const [token, setToken] = useState('');
+  const [channel, setChannel] = useState('');
+  const [editing, setEditing] = useState(false);
+  const busy = action.busy !== null;
+  const showForm = !sl.configured || editing;
+
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Slack</h3>
+        {sl.configured ? <Badge status="completed" label="Configured" /> : <Badge status="paused" label="Not set up" />}
+      </div>
+      {sl.configured && (
+        <p className="muted small">
+          Posting to <code>{sl.channel_id}</code>
+          {sl.team ? ` in ${sl.team}` : ''}
+          {sl.source === 'settings'
+            ? ` · saved by ${sl.updated_by || 'unknown'} ${timeAgo(sl.updated_at)}`
+            : ' · from SLACK_BOT_TOKEN / SLACK_CHANNEL_ID on the server'}
+        </p>
+      )}
+      {showForm ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update(action.run('slack-save', () => saveSlack(token, channel), 'Slack token checked and saved.')).then(() => {
+              setToken('');
+              setEditing(false);
+            });
+          }}
+        >
+          <p className="muted small">
+            Use a bot token (<code>xoxb-…</code>) with the <code>chat:write</code> and <code>channels:history</code> scopes, and
+            invite the bot to the channel.
+          </p>
+          <div className="form-row">
+            <label className="field">
+              Bot token
+              <input required type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+            </label>
+            <label className="field">
+              Channel ID
+              <input required value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="C0123456789" />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              Check and save
+            </button>
+            {editing && (
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        <div className="actions">
+          <button
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => {
+              setChannel(sl.channel_id || '');
+              setEditing(true);
+            }}
+          >
+            Change
+          </button>
+          {sl.source === 'settings' && (
+            <button
+              className="btn-danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Remove the Slack token? Slack steps stop working until a token is saved again.')) {
+                  update(action.run('slack-remove', removeSlack, 'Slack token removed.'));
+                }
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 };

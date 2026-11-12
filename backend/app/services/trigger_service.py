@@ -142,9 +142,9 @@ class TriggerService:
 
         error: Optional[str] = None
         if not self.gmail.is_configured():
-            error = "Gmail is not configured (set GMAIL_ENABLED and provide credentials.json)."
+            error = "Gmail is not set up. Connect Gmail in Settings."
         elif not self.gmail.is_authenticated():
-            error = "Gmail is not authorized yet (complete the OAuth sign-in to create token.json)."
+            error = "Gmail is not connected yet. Use Connect Gmail in Settings."
         else:
             query = f"({trigger.gmail_query}) after:{trigger.active_since}"
             try:

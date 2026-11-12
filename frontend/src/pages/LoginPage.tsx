@@ -52,10 +52,17 @@ export const LoginPage: React.FC<{ onSignedIn: (session: Session) => void; notic
         <button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <p className="muted small">
-          No account? Ask an admin. The first admin is created on the server with{' '}
-          <code>python backend/app/cli.py create-user --role admin</code>.
-        </p>
+        <details className="muted small">
+          <summary>No account?</summary>
+          <p>Ask an admin to add you in Settings. To create the first admin on the server, run:</p>
+          <p>
+            Docker: <code>docker compose exec api python -m app.cli create-user --email you@example.com --name "Your Name" --role admin</code>
+          </p>
+          <p>
+            Local: <code>python backend/app/cli.py create-user --email you@example.com --name "Your Name" --role admin</code>
+          </p>
+          <p>It asks for a password (at least 12 characters).</p>
+        </details>
       </form>
     </main>
   );

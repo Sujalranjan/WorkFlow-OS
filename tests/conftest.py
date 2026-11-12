@@ -41,9 +41,12 @@ os.environ["WORKFLOWOS_SKIP_DOTENV"] = "1"
 os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 
 if not LIVE_TESTS:
-    for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"):
+    for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "WORKFLOWOS_SECRET_KEY"):
         os.environ.pop(_secret, None)
     os.environ["GMAIL_ENABLED"] = "false"
+    # Never read the developer's real Gmail OAuth client or token from the repo root.
+    os.environ["GMAIL_CREDENTIALS_PATH"] = os.path.join(_TEST_DATA_DIR, "no-credentials.json")
+    os.environ["GMAIL_TOKEN_PATH"] = os.path.join(_TEST_DATA_DIR, "no-token.json")
 
 import pytest  # noqa: E402
 

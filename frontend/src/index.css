@@ -250,6 +250,15 @@ code {
   background: var(--surface-2);
 }
 
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .secret-row {
   display: flex;
   gap: 0.5rem;

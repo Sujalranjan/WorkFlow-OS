@@ -1,5 +1,7 @@
 # Runs the WorkFlowOS API, the Demo CRM and the dashboard.
 #   docker compose up --build
+# Host ports are configurable (e.g. when 8000 is taken): API_PORT=8010 WEB_PORT=5180 docker compose up --build
+# After changing API_PORT, use --build: the dashboard image has the API address built in.
 # Dashboard: http://localhost:5173   API: http://localhost:8000/docs   CRM UI: http://localhost:8001/ui/customers
 #
 # Create the first admin once:
@@ -16,7 +18,7 @@ services:
     environment:
       HEALTH_URL: http://127.0.0.1:8001/api/crm/health
     ports:
-      - "8001:8001"
+      - "${CRM_PORT:-8001}:8001"
     volumes:
       - workflowos-data:/data
     restart: unless-stopped
@@ -34,9 +36,11 @@ services:
       GMAIL_TOKEN_PATH: /secrets/token.json
       CRM_API_BASE_URL: http://crm:8001/api/crm
       LOG_FORMAT: json
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:${WEB_PORT:-5173},http://127.0.0.1:${WEB_PORT:-5173}}
+      # Address of the API in the user's browser (Gmail OAuth redirect URI is built from it)
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     volumes:
       - workflowos-data:/data
       - ./secrets:/secrets
@@ -49,9 +53,9 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_BACKEND_URL: http://localhost:8000
+        VITE_BACKEND_URL: ${PUBLIC_API_URL:-http://localhost:${API_PORT:-8000}}
     ports:
-      - "5173:80"
+      - "${WEB_PORT:-5173}:80"
     depends_on:
       - api
     restart: unless-stopped

@@ -77,3 +77,6 @@ workflowos_sandbox/
 
 # Docker: Gmail credentials/token mounted into the API container
 secrets/
+
+# Encryption key for stored integration credentials (created next to the database)
+*.secret.key
