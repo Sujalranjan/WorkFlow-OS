@@ -1,4 +1,4 @@
-"""Semantic Understanding API endpoints (Phase 5)."""
+"""Semantic Understanding API endpoints."""
 
 import os
 from typing import Optional

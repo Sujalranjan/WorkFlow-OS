@@ -1,4 +1,4 @@
-"""Deterministic Workflow DNA Extractor (Phase 4).
+"""Deterministic Workflow DNA Extractor.
 
 Transforms repeated DiscoveryCandidate patterns and their supporting TaskSessions
 into explainable WorkflowDNA:

@@ -1,4 +1,4 @@
-"""Unit, Integration, and Architecture Tests for WorkFlowOS Demo CRM (Phase 15B).
+"""Unit, Integration, and Architecture Tests for WorkFlowOS Demo CRM.
 
 Verifies:
 1. CRM database repository CRUD and search

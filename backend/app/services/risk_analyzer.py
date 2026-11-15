@@ -1,4 +1,4 @@
-"""Risk Analysis Engine (Phase 6).
+"""Risk Analysis Engine.
 
 Provides deterministic, explainable risk assessment for workflow steps and entire
 workflows. Categorizes actions into:

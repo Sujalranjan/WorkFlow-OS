@@ -1,4 +1,4 @@
-"""Post-Execution Verification and Evidence Engine (Phase 9).
+"""Post-Execution Verification and Evidence Engine.
 
 Orchestrates deterministic post-execution verification:
 - Evaluates whether executed steps produced their expected state/results
@@ -126,7 +126,7 @@ class VerificationEngine:
             # Case B: Step represents an external application (Gmail, CRM, Slack)
             app_lower = step.application.lower()
             if any(ext in app_lower for ext in ["gmail", "crm", "salesforce", "hubspot", "slack", "teams"]):
-                # GmailApiExecutor (Phase 12/15A), CrmApiExecutor (Phase 15B), and SlackApiExecutor (Phase 15D) are supported.
+                # GmailApiExecutor, CrmApiExecutor, and SlackApiExecutor are supported.
                 # Teams or Gmail mutations remain prohibited.
                 act_norm = step.action.lower().strip().replace(" ", "_")
                 is_gmail_allowed = ("gmail" in app_lower) and (

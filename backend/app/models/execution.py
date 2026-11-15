@@ -1,4 +1,4 @@
-"""Execution models for Phase 8: Execution Engine Foundation + Controlled Local Execution.
+"""Execution models: Execution Engine Foundation + Controlled Local Execution.
 
 Defines:
 - ExecutionMode (DRY_RUN, LIVE)
@@ -88,7 +88,7 @@ class ExecutionStepResult(BaseModel):
     affected_resources: List[str] = Field(default_factory=list, description="Files, artifacts, or entities created/modified")
     start_time: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     end_time: Optional[str] = Field(default=None)
-    # Phase 10: Multi-strategy & capability audit fields
+    # Multi-strategy & capability audit fields
     selected_strategy: Optional[str] = Field(default=None, description="Canonical strategy type selected")
     selection_reason: Optional[str] = Field(default=None, description="Deterministic strategy selection reason")
     candidate_strategies: List[str] = Field(default_factory=list, description="Candidate strategies evaluated")

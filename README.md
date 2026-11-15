@@ -4,12 +4,18 @@
 
 WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
 
+```mermaid
+flowchart LR
+    O[Observe<br/>desktop agent +<br/>browser extension] --> D[Discover<br/>repeated routines]
+    D --> I[Interpret<br/>Gemini, checked against<br/>what was observed]
+    I --> A{Approve<br/>workflow}
+    A --> R[Run<br/>manually or on<br/>new email, approved]
+    R --> X[Gmail · CRM · Slack]
+    X --> V[Verify<br/>independent re-reads]
+    V --> L[Reliability]
 ```
-Observe ──► Discover ──► DNA ──► Interpret ──► Spec + approval ──► Plan ──► Execute ──► Verify ──► Learn
-(agent +    (repeated    (what    (LLM, checked   (human must        (exact    (Gmail/    (independent  (reliability
- browser     sessions)    stays/   against the     approve)           routing)  CRM/Slack)  re-checks)    profile)
- extension)               varies)  DNA)
-```
+
+Details: [docs/architecture.md](docs/architecture.md) · setup and configuration: [docs/development.md](docs/development.md).
 
 ## How observation becomes execution
 
@@ -48,8 +54,13 @@ docker compose up --build
 
 This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). Data is kept in the `workflowos-data` volume.
 
-- Integrations are read from `.env` if it exists (copy `.env.example`).
-- For Gmail, create `token.json` on your machine first (the sign-in opens a browser, so it can't run inside a container), then put `credentials.json` and `token.json` in a `secrets/` folder next to `docker-compose.yml`.
+- Create the first admin (there is no sign-up page; admins add everyone else in **Settings**):
+  ```bash
+  docker compose exec api python -m app.cli create-user --email you@example.com --name "Your Name" --role admin
+  ```
+- Connect Gmail and Slack in **Settings > Integrations** (see [Integrations](#integrations)). Credentials are stored encrypted in the data volume; the encryption key is created there too (`/data/workflowos.secret.key`) unless you set `WORKFLOWOS_SECRET_KEY`.
+- Ports already in use? `API_PORT=8010 WEB_PORT=5180 CRM_PORT=8011 docker compose up --build`. The Gmail redirect URI follows `API_PORT` (`http://localhost:8010/api/integrations/gmail/callback`).
+- Other settings are read from `.env` if it exists (copy `.env.example`).
 - The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
 - Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
 
@@ -72,9 +83,13 @@ pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
    ```bash
    cd frontend && npm install && npm run dev
    ```
-4. **Observe real activity**
-   - Desktop agent (window focus and file events): `python -m desktop_agent.agent` with `PYTHONPATH=".;backend;desktop-agent"`.
-   - Browser extension: open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and pick `desktop-agent/browser_extension`. Its options page sets the backend URL.
+4. **First admin** (asks for a password of at least 12 characters), then sign in at http://localhost:5173:
+   ```bash
+   python backend/app/cli.py create-user --email you@example.com --name "Your Name" --role admin
+   ```
+5. **Observe real activity.** In **Settings → API keys**, create a key. The agent and extension can only *send* activity with it.
+   - Desktop agent (window focus and file events): set `WORKFLOWOS_API_KEY` in `.env`, then `python -m desktop_agent.agent` with `PYTHONPATH=".;backend;desktop-agent"`.
+   - Browser extension: open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and pick `desktop-agent/browser_extension`. In its options page, set the backend URL and paste the key.
 
    Then do the routine by hand a few times (at least 2 sessions, separated by 2+ minutes of inactivity).
 
@@ -92,6 +107,9 @@ Open `http://localhost:5173`. The sidebar follows the life of a workflow:
 | **Inbox** | Approve emails picked up by a trigger, and answer runs that paused (for example, choose which CRM customer an email is about). |
 | **Automations** | Create email triggers that start a workflow when a matching email arrives. |
 | **Runs** | Every run, step by step, and whether the result was verified afterwards. |
+| **Settings** (admins) | Add people and set their role; create and revoke API keys for the agent and extension. |
+
+**Roles:** *viewers* see everything; *approvers* can also create, approve and run workflows and answer paused runs; *admins* can also manage email triggers, users and API keys. Approvals and runs record who did them.
 
 Without `GEMINI_API_KEY`, routines are described by built-in rules from what was observed; with a key, Gemini writes the description and its output is checked against the observation before use.
 
@@ -110,11 +128,19 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 | Service | Configure | Notes |
 |---|---|---|
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
-| Gmail (read-only) | `credentials.json` (OAuth client) + `GMAIL_ENABLED=true` | Sign in: `python desktop-agent/desktop_agent/demo_phase12_live.py` (delete an expired `token.json` first) |
-| Slack | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` | Bot needs `chat:write` (+ `channels:history` for verification) |
+| Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
+| Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification); checked with Slack before saving. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
 
-Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json` or `token.json` (they are git-ignored).
+**Connecting Gmail** (once per installation):
+
+1. In Google Cloud Console, enable the Gmail API and create an OAuth client ID of type **Web application**.
+2. Add the redirect URI shown in Settings as an *authorized redirect URI*: `PUBLIC_API_URL` + `/api/integrations/gmail/callback` (default `http://localhost:8000/api/integrations/gmail/callback`).
+3. Paste the client ID and secret into Settings, click **Connect Gmail**, and approve read-only access.
+
+The sign-in uses PKCE and a single-use state that expires after 10 minutes. Only the `gmail.readonly` scope is requested. **Disconnect** revokes the token at Google.
+
+Credentials saved in Settings are encrypted with `WORKFLOWOS_SECRET_KEY`, or with a key file created next to the database. Back up that key separately from the database: without it, saved integrations must be connected again. Settings take precedence over the older `.env` and `token.json` setup. Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json`, `token.json` or `*.secret.key` (they are git-ignored).
 
 ## Tests
 
@@ -127,7 +153,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs this suite, type-
 
 Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 
-The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [phase16_workflow.py](backend/app/services/phase16_workflow.py), and then execute and verify it.
+The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [reference_workflow.py](backend/app/services/reference_workflow.py), and then execute and verify it.
 
 ## Adding a new executable action
 
@@ -137,3 +163,7 @@ The observation-to-execution bridge is covered by [tests/backend/test_observed_t
 4. Add a classification test and extend the recorded-session tests.
 
 More detail: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).
+
+## License
+
+[MIT](LICENSE)

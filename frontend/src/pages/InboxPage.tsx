@@ -1,7 +1,7 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { approveRun, listRuns, listWorkflows, rejectRun, resumeRun } from '../api';
 import { WorkflowRun } from '../types/automation';
-import { Alert, Badge, Empty, Loading, OperatorContext, PageHeader, formatTime, href, useAction, useLoad } from '../ui';
+import { Alert, Badge, CAN, Empty, Loading, PageHeader, formatTime, href, useAction, useLoad, useSession } from '../ui';
 
 function outcome(run: WorkflowRun): string {
   const subject = run.source_email.subject || 'the email';
@@ -21,7 +21,7 @@ export const InboxPage: React.FC<{ onChange: () => void }> = ({ onChange }) => {
     const [runs, workflows] = await Promise.all([listRuns(['PENDING_APPROVAL', 'NEEDS_INPUT'], 200), listWorkflows()]);
     return { runs, titles: Object.fromEntries(workflows.map((w) => [w.workflow_id, w.title])) };
   }, [], 10000);
-  const operator = useContext(OperatorContext);
+  const canDecide = useSession().can(CAN.decideRun);
   const action = useAction();
 
   const act = async (key: string, fn: () => Promise<WorkflowRun>) => {
@@ -56,9 +56,10 @@ export const InboxPage: React.FC<{ onChange: () => void }> = ({ onChange }) => {
               run={run}
               workflowTitle={data.data!.titles[run.workflow_id] || 'Workflow'}
               busy={action.busy}
-              onApprove={() => act(`approve-${run.run_id}`, () => approveRun(run.run_id, operator))}
-              onReject={() => act(`reject-${run.run_id}`, () => rejectRun(run.run_id, operator))}
-              onResume={(inputs) => act(`resume-${run.run_id}`, () => resumeRun(run.run_id, inputs, operator))}
+              canDecide={canDecide}
+              onApprove={() => act(`approve-${run.run_id}`, () => approveRun(run.run_id))}
+              onReject={() => act(`reject-${run.run_id}`, () => rejectRun(run.run_id))}
+              onResume={(inputs) => act(`resume-${run.run_id}`, () => resumeRun(run.run_id, inputs))}
             />
           ))}
         </ul>
@@ -71,10 +72,11 @@ const InboxItem: React.FC<{
   run: WorkflowRun;
   workflowTitle: string;
   busy: string | null;
+  canDecide: boolean;
   onApprove: () => void;
   onReject: () => void;
   onResume: (inputs: Record<string, string>) => void;
-}> = ({ run, workflowTitle, busy, onApprove, onReject, onResume }) => {
+}> = ({ run, workflowTitle, busy, canDecide, onApprove, onReject, onResume }) => {
   const [selected, setSelected] = useState('');
   const [typed, setTyped] = useState('');
   const email = run.source_email;
@@ -99,7 +101,11 @@ const InboxItem: React.FC<{
       {email.snippet && <p className="snippet">{email.snippet}</p>}
       {email.attachment_names.length > 0 && <div className="muted small">Attachments: {email.attachment_names.join(', ')}</div>}
 
-      {run.status === 'PENDING_APPROVAL' && (
+      {!canDecide && (
+        <p className="muted small">An approver or admin needs to decide on this.</p>
+      )}
+
+      {canDecide && run.status === 'PENDING_APPROVAL' && (
         <div className="actions">
           <button disabled={busy !== null} onClick={onApprove}>
             {busy === `approve-${run.run_id}` ? 'Running…' : 'Approve and run'}
@@ -110,7 +116,7 @@ const InboxItem: React.FC<{
         </div>
       )}
 
-      {run.status === 'NEEDS_INPUT' && (
+      {canDecide && run.status === 'NEEDS_INPUT' && (
         <div className="question">
           <p className="question-text">{run.intervention?.reason || 'This run needs your input to continue.'}</p>
           {candidates.length > 0 && (

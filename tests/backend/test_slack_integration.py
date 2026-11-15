@@ -1,4 +1,4 @@
-"""Slack API Notification Integration Tests (Phase 15D).
+"""Slack API Notification Integration Tests.
 
 Validates the complete Slack Web API integration:
     WorkFlowOS Engine
@@ -775,7 +775,7 @@ def test_live_slack_notification_conditional():
     client = SlackApiClient(bot_token=token, default_channel_id=channel)
     executor = SlackApiExecutor(client=client)
 
-    test_message = "WorkFlowOS Phase 15D integration test — Slack API"
+    test_message = "WorkFlowOS integration test — Slack API"
     step = PlannedStep(
         plan_step_id="step-live-slack",
         source_canonical_step_id="c-live-s",

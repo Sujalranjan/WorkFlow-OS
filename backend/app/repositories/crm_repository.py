@@ -1,4 +1,4 @@
-"""CRM SQLite Repository (Phase 15B).
+"""CRM SQLite Repository.
 
 Dedicated repository for customer records in the WorkFlowOS Demo CRM database.
 Maintains a separate database boundary from the core workflow execution engine.
@@ -231,7 +231,7 @@ class CrmRepository:
             conn.commit()
 
     def seed_default_customers(self) -> List[CrmCustomer]:
-        """Seeds realistic default customers matching the hackathon workflow examples."""
+        """Seeds realistic default customers matching the reference workflow examples."""
         default_customers = [
             CrmCustomer(
                 customer_id="cust-acme-001",

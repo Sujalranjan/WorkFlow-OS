@@ -61,8 +61,13 @@ jobs:
             curl -sf http://localhost:8000/health && curl -sf http://localhost:8001/api/crm/health && break
             sleep 2
           done
-          curl -sf http://localhost:8000/api/status
           curl -sf -o /dev/null http://localhost:5173/
+          # Protected routes reject anonymous callers...
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/status)" = "401"
+          # ...and work after signing in as an admin created with the CLI.
+          docker compose exec -T -e WORKFLOWOS_NEW_PASSWORD=ci-admin-password api             python -m app.cli create-user --email ci@example.com --name CI --role admin
+          curl -sf -c jar -H 'Content-Type: application/json'             -d '{"email":"ci@example.com","password":"ci-admin-password"}' http://localhost:8000/api/auth/login
+          curl -sf -b jar http://localhost:8000/api/status
       - name: Logs on failure
         if: failure()
         run: docker compose logs

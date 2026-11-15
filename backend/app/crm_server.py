@@ -1,4 +1,4 @@
-"""Independent WorkFlowOS Demo CRM Server (Phase 15C).
+"""Independent WorkFlowOS Demo CRM Server.
 
 Provides a dedicated, independent process entry point for the WorkFlowOS Demo CRM API.
 Enforces the architectural separation:

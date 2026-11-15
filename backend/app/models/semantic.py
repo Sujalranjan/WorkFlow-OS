@@ -1,4 +1,4 @@
-"""Canonical Pydantic models for Semantic Understanding & Intent Translation (Phase 5).
+"""Canonical Pydantic models for Semantic Understanding & Intent Translation.
 
 Represents the validated semantic interpretation of a deterministic WorkflowDNA.
 """

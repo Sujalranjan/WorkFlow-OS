@@ -1,4 +1,4 @@
-"""Real HTTP Execution & Verification Tests for WorkFlowOS CRM (Phase 15C).
+"""Real HTTP Execution & Verification Tests for WorkFlowOS CRM.
 
 Validates the complete real HTTP pipeline without mocks or TestClient fallbacks:
     WorkFlowOS Engine

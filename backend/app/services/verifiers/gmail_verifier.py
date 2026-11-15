@@ -1,4 +1,4 @@
-"""Gmail Verification Strategy (Phase 12 & Phase 15A).
+"""Gmail Verification Strategy.
 
 Deterministically verifies read-only Gmail API execution outcomes:
 1. search_email:

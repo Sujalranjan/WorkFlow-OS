@@ -1,4 +1,4 @@
-"""Execution Strategy and Capability Models for WorkFlowOS (Phase 10).
+"""Execution Strategy and Capability Models for WorkFlowOS.
 
 Defines:
 - ExecutionStrategyType: Canonical execution strategy categories.
@@ -23,7 +23,7 @@ class ExecutionStrategyType(str, Enum):
 
     @classmethod
     def is_implemented(cls, strategy: "ExecutionStrategyType") -> bool:
-        """Determines if this strategy type has a working, implemented executor in Phase 10."""
+        """Determines if this strategy type has a working, implemented executor."""
         return strategy == cls.CONTROLLED_LOCAL
 
 

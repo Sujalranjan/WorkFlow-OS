@@ -1,4 +1,4 @@
-"""Gmail API Client Abstraction for Phase 12.
+"""Gmail API Client Abstraction.
 
 Provides a dedicated, secure client interface for read-only Gmail API operations.
 Uses official Google OAuth 2.0 with the narrowest read-only scope:
@@ -33,6 +33,9 @@ except ImportError:
     InstalledAppFlow = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+SIGN_IN_NEEDED = "Sign-in needed: use Connect Gmail in Settings (or run scripts/gmail_login.py)."
+SIGN_IN_EXPIRED = "Sign-in expired: connect Gmail again in Settings (or run scripts/gmail_login.py --force)."
 
 _PART_FIELDS = "filename,mimeType,body(attachmentId,size)"
 _SUMMARY_FIELDS = (
@@ -92,15 +95,60 @@ class GmailApiClient:
         token_path: Optional[str] = None,
         scopes: Optional[List[str]] = None,
         service: Optional[Any] = None,
+        credential_store: Optional[Any] = None,
+        use_credential_store: Optional[bool] = None,
     ) -> None:
         self.credentials_path = credentials_path or GMAIL_CREDENTIALS_PATH
         self.token_path = token_path or GMAIL_TOKEN_PATH
         self.scopes = scopes or GMAIL_SCOPES
-        self._service = service  # allows injecting a mock service for deterministic testing
+        self._injected_service = service  # allows injecting a mock service for deterministic testing
+        # Built service, reused only while the same sign-in (source + refresh token) is in effect,
+        # so Disconnect or connecting another account takes effect without a restart.
+        self._service: Optional[Any] = None
+        self._service_identity: Optional[Tuple[Optional[str], Optional[str]]] = None
+        # Token sources, in order: "Connect Gmail" in Settings (encrypted store), then token.json.
+        # An explicit token_path (CLI sign-in script, tests) means file only.
+        self._store = credential_store
+        self._use_store = use_credential_store if use_credential_store is not None else token_path is None
+
+    def _stored_token(self) -> Optional[Dict[str, Any]]:
+        if not self._use_store:
+            return None
+        try:
+            from app.services.credential_store import GMAIL_TOKEN, get_credential_store
+
+            record = (self._store or get_credential_store()).get(GMAIL_TOKEN)
+        except Exception:
+            logger.exception("Could not read the Gmail token from the credential store")
+            return None
+        return record.secret if record else None
+
+    def _load_credentials(self) -> Tuple[Any, Optional[str]]:
+        """(google Credentials, 'store' | 'file') or (None, None)."""
+        from google.oauth2.credentials import Credentials
+
+        info = self._stored_token()
+        if info:
+            return Credentials.from_authorized_user_info(info, self.scopes), "store"
+        if os.path.exists(self.token_path):
+            return Credentials.from_authorized_user_file(self.token_path, self.scopes), "file"
+        return None, None
+
+    def _save_credentials(self, creds: Any, source: Optional[str]) -> None:
+        """Persist a refreshed token back where it came from."""
+        if source == "store":
+            from app.services.credential_store import GMAIL_TOKEN, get_credential_store
+
+            (self._store or get_credential_store()).update_secret(GMAIL_TOKEN, json.loads(creds.to_json()))
+            return
+        with open(self.token_path, "w", encoding="utf-8") as token_file:
+            token_file.write(creds.to_json())
 
     def is_configured(self) -> bool:
         """Checks whether Gmail integration is enabled and configured."""
-        if self._service is not None:
+        if self._injected_service is not None:
+            return True
+        if self._stored_token():
             return True
         if not GMAIL_ENABLED and not os.path.exists(self.credentials_path) and not os.path.exists(self.token_path):
             return False
@@ -108,14 +156,11 @@ class GmailApiClient:
 
     def is_authenticated(self) -> bool:
         """Checks if a valid or refreshable OAuth token is available."""
-        if self._service is not None:
+        if self._injected_service is not None:
             return True
-        if not os.path.exists(self.token_path):
-            return False
 
         try:
-            from google.oauth2.credentials import Credentials
-            creds = Credentials.from_authorized_user_file(self.token_path, self.scopes)
+            creds, _ = self._load_credentials()
             if creds and creds.valid:
                 return True
             # Expired with refresh token can be refreshed automatically
@@ -132,27 +177,25 @@ class GmailApiClient:
         Unlike is_authenticated(), this makes a network call, so it notices a revoked or
         expired refresh token instead of trusting the token file.
         """
-        if self._service is not None:
+        if self._injected_service is not None:
             return True, "Read-only access."
-        if not os.path.exists(self.token_path):
-            return False, "Sign-in needed: run the Gmail authorization script to create token.json."
         try:
             from google.auth.transport.requests import Request
-            from google.oauth2.credentials import Credentials
 
-            creds = Credentials.from_authorized_user_file(self.token_path, self.scopes)
+            creds, source = self._load_credentials()
+            if creds is None:
+                return False, SIGN_IN_NEEDED
             if creds.valid:
                 return True, "Read-only access."
             if not creds.refresh_token:
-                return False, "Sign-in expired: delete token.json and run the Gmail authorization script again."
+                return False, SIGN_IN_EXPIRED
             creds.refresh(Request())
-            with open(self.token_path, "w", encoding="utf-8") as token_file:
-                token_file.write(creds.to_json())
+            self._save_credentials(creds, source)
             return True, "Read-only access."
         except Exception as e:
             logger.info("Gmail sign-in check failed: %s", e)
             if "invalid_grant" in str(e):
-                return False, "Sign-in expired: delete token.json and run the Gmail authorization script again."
+                return False, SIGN_IN_EXPIRED
             return False, f"Could not confirm Gmail access: {type(e).__name__}."
 
     def authenticate_interactive(self, open_browser: bool = True) -> Any:
@@ -203,32 +246,29 @@ class GmailApiClient:
 
     def get_service(self, interactive: bool = False, open_browser: bool = True) -> Any:
         """Returns the authenticated Google API Resource service object."""
-        if self._service is not None:
-            return self._service
+        if self._injected_service is not None:
+            return self._injected_service
 
         if not self.is_configured():
             raise GmailConfigurationError(
-                "Gmail integration is not configured. Set GMAIL_ENABLED=true and provide GMAIL_CREDENTIALS_PATH."
+                "Gmail is not set up. Connect Gmail in Settings (or provide credentials.json and token.json)."
             )
 
         try:
-            from google.oauth2.credentials import Credentials
             from google.auth.transport.requests import Request
             from googleapiclient.discovery import build
 
-            creds = None
-            if os.path.exists(self.token_path):
-                try:
-                    creds = Credentials.from_authorized_user_file(self.token_path, self.scopes)
-                except Exception as load_err:
-                    logger.debug("Failed loading token file '%s': %s", self.token_path, str(load_err))
+            creds, source = None, None
+            try:
+                creds, source = self._load_credentials()
+            except Exception as load_err:
+                logger.debug("Failed loading Gmail token: %s", str(load_err))
 
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
                     try:
                         creds.refresh(Request())
-                        with open(self.token_path, "w", encoding="utf-8") as token_file:
-                            token_file.write(creds.to_json())
+                        self._save_credentials(creds, source)
                     except Exception as refresh_err:
                         if interactive and os.path.exists(self.credentials_path):
                             return self.authenticate_interactive(open_browser=open_browser)
@@ -238,12 +278,12 @@ class GmailApiClient:
                 elif interactive and os.path.exists(self.credentials_path):
                     return self.authenticate_interactive(open_browser=open_browser)
                 else:
-                    raise GmailAuthenticationError(
-                        f"OAuth token is missing or invalid at '{self.token_path}'. "
-                        "Authorization is required via OAuth flow."
-                    )
+                    raise GmailAuthenticationError(f"Gmail token is missing or invalid. {SIGN_IN_NEEDED}")
 
-            self._service = build("gmail", "v1", credentials=creds)
+            identity = (source, creds.refresh_token)
+            if self._service is None or self._service_identity != identity:
+                self._service = build("gmail", "v1", credentials=creds)
+                self._service_identity = identity
             return self._service
 
         except (GmailConfigurationError, GmailAuthenticationError):

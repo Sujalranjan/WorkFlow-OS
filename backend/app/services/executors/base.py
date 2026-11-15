@@ -1,4 +1,4 @@
-"""Executor abstraction and interfaces for WorkFlowOS (Phase 8).
+"""Executor abstraction and interfaces for WorkFlowOS.
 
 Defines:
 - BaseExecutor: Abstract base class for all execution strategy engines.

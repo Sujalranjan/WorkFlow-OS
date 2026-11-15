@@ -1,4 +1,4 @@
-"""Unit, Integration, and Security Tests for GmailApiExecutor (Phase 12).
+"""Unit, Integration, and Security Tests for GmailApiExecutor.
 
 Verifies:
 1. Gmail executor capability is registered
@@ -17,7 +17,7 @@ Verifies:
 14. Verification handles successful read
 15. Verification handles failed read
 16. Credentials and tokens are NOT included in logs, audit records, or outputs
-17. Phase 11 learning consumes Gmail execution and verification results
+17. learning consumes Gmail execution and verification results
 18. Security: No token leakage in responses or exceptions
 19. Security: No Gmail mutation methods or endpoints are exposed
 20. Security: No arbitrary API or HTTP execution allowed
@@ -645,7 +645,7 @@ def test_credentials_not_included_in_logs_audit(sample_approved_gmail_plan, mock
 
 
 def test_phase11_learning_consumes_gmail_result(sample_approved_gmail_plan, mock_gmail_client):
-    """17. Test Phase 11 LearningEngine consumes Gmail execution outcome."""
+    """17. Test LearningEngine consumes Gmail execution outcome."""
     reg = ExecutorRegistry()
     reg.register(GmailApiExecutor(client=mock_gmail_client))
     engine = ExecutionEngine(registry=reg)
@@ -707,7 +707,7 @@ def test_security_no_arbitrary_requests_allowed(sample_gmail_step):
 
 
 # =========================================================================
-# 9. Phase 12.1 Live OAuth & Token Refresh Verification
+# 9. Live OAuth & Token Refresh Verification
 # =========================================================================
 def test_scope_is_strictly_readonly():
     """Verify that Gmail scope is strictly locked to read-only."""

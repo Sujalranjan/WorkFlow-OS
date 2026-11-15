@@ -1,4 +1,4 @@
-"""Automated unit and integration tests for Phase 8: Execution Engine Foundation + Controlled Local Execution.
+"""Automated unit and integration tests: Execution Engine Foundation + Controlled Local Execution.
 
 Verifies:
 1. Executor interface contract.
@@ -16,7 +16,7 @@ Verifies:
 13. Fail-closed failure handling (halting execution upon step failure).
 14. Duplicate execution protection (idempotency key).
 15. Cancellation behavior.
-16. Guarantee that Phase 7 dry-run simulation remains non-mutating.
+16. Guarantee that dry-run simulation remains non-mutating.
 """
 
 from datetime import datetime, timezone

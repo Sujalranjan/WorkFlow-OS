@@ -1,4 +1,4 @@
-"""Execution Planner Service (Phase 7).
+"""Execution Planner Service.
 
 Converts an APPROVED CanonicalWorkflowSpec into a deterministic ExecutionPlan:
 1. Validates that the workflow specification is formally approved.
@@ -6,7 +6,7 @@ Converts an APPROVED CanonicalWorkflowSpec into a deterministic ExecutionPlan:
 3. Selects execution strategies with explainable rationale (API, App Integration, Accessibility, Browser, Fallback).
 4. Derives expected state transitions (Before vs Expected After vs Actual Untouched).
 5. Evaluates structural preconditions (Satisfied, Unsatisfied, Unknown).
-6. Inherits deterministic Phase 6 risk classifications and confirmation requirements.
+6. Inherits deterministic risk classifications and confirmation requirements.
 """
 
 from datetime import datetime, timezone
@@ -242,7 +242,7 @@ class ExecutionPlanner:
         """Evaluate structural preconditions, explicitly distinguishing satisfied from unknown."""
         checks: List[PreconditionCheck] = []
         for cond in preconditions:
-            # In Phase 7 shadow mode without live desktop automation, preconditions requiring
+            # In shadow mode without live desktop automation, preconditions requiring
             # runtime environment checks must be marked as UNKNOWN rather than assumed satisfied.
             checks.append(
                 PreconditionCheck(
@@ -343,7 +343,7 @@ class ExecutionPlanner:
                 catalog_action=step.catalog_action,
             )
 
-            # Phase 10: Multi-strategy selection evaluation
+            # Multi-strategy selection evaluation
             sel_res = self.strategy_selector.select_strategy(planned_step, spec)
             if sel_res.is_executable and sel_res.selected_strategy:
                 if sel_res.selected_strategy == ExecutionStrategyType.API_INTEGRATION:

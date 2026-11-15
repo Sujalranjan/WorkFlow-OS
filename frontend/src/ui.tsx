@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityEvent } from './types/event';
 import { RiskCategory } from './types/canonical';
+import type { User } from './api';
 
 // --- routing (hash based, so links and refresh work without a server router) --------
 
@@ -78,25 +79,33 @@ export function useAction() {
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-// --- operator identity (used as reviewer / approver name) --------------------------
+// --- signed-in user -----------------------------------------------------------------
 
-export const OperatorContext = React.createContext<string>('operator');
+export interface SessionInfo {
+  user: User;
+  /** True if the signed-in user's role may call this route ("POST /api/automation/triggers"). */
+  can: (route: string) => boolean;
+}
 
-const OPERATOR_KEY = 'workflowos.operator';
-export function readOperator(): string {
-  try {
-    return localStorage.getItem(OPERATOR_KEY) || '';
-  } catch {
-    return '';
-  }
+export const SessionContext = React.createContext<SessionInfo | null>(null);
+
+export function useSession(): SessionInfo {
+  const session = React.useContext(SessionContext);
+  if (!session) throw new Error('useSession used outside the signed-in app');
+  return session;
 }
-export function saveOperator(name: string) {
-  try {
-    localStorage.setItem(OPERATOR_KEY, name);
-  } catch {
-    /* storage unavailable: name is kept for this session only */
-  }
-}
+
+/** Routes behind the main actions, so pages can hide what the user's role does not allow. */
+export const CAN = {
+  createWorkflow: 'POST /api/workflows/{semantic_workflow_id}/specification',
+  reviewWorkflow: 'POST /api/workflows/specifications/{workflow_id}/approve',
+  runWorkflow: 'POST /api/workflows/execution-plans/{execution_plan_id}/execute',
+  decideRun: 'POST /api/automation/runs/{run_id}/approve',
+  verify: 'POST /api/workflows/executions/{execution_id}/verify',
+  manageTriggers: 'POST /api/automation/triggers',
+  loadSample: 'POST /api/demo/seed-activity',
+  manageUsers: 'POST /api/auth/users',
+};
 
 // --- formatting --------------------------------------------------------------------
 

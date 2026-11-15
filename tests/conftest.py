@@ -41,9 +41,12 @@ os.environ["WORKFLOWOS_SKIP_DOTENV"] = "1"
 os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 
 if not LIVE_TESTS:
-    for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"):
+    for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "WORKFLOWOS_SECRET_KEY"):
         os.environ.pop(_secret, None)
     os.environ["GMAIL_ENABLED"] = "false"
+    # Never read the developer's real Gmail OAuth client or token from the repo root.
+    os.environ["GMAIL_CREDENTIALS_PATH"] = os.path.join(_TEST_DATA_DIR, "no-credentials.json")
+    os.environ["GMAIL_TOKEN_PATH"] = os.path.join(_TEST_DATA_DIR, "no-token.json")
 
 import pytest  # noqa: E402
 
@@ -55,6 +58,25 @@ def pytest_configure(config):
         "markers",
         "live: talks to real external services (Gemini/Slack/Gmail); run with WORKFLOWOS_LIVE_TESTS=1",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_auth: exercise real sign-in, sessions, roles and API keys instead of the test admin",
+    )
+
+
+TEST_ADMIN_EMAIL = "test-admin@example.com"
+
+
+@pytest.fixture(autouse=True)
+def _signed_in_as_test_admin(request, monkeypatch):
+    """API tests about workflows run as a signed-in admin; `real_auth` tests use real credentials."""
+    if request.node.get_closest_marker("real_auth"):
+        return
+    from app import security
+    from app.models.auth import Principal, Role, User
+
+    admin = Principal(kind="user", user=User(email=TEST_ADMIN_EMAIL, name="Test Admin", role=Role.ADMIN))
+    monkeypatch.setattr(security, "resolve_principal", lambda _request: admin)
 
 
 def pytest_collection_modifyitems(config, items):

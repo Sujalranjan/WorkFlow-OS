@@ -1,4 +1,4 @@
-"""Verification models for Phase 9: Post-Execution Verification + Evidence Engine.
+"""Verification models: Post-Execution Verification + Evidence Engine.
 
 Defines:
 - VerificationStatus (PENDING, VERIFIED, FAILED, UNKNOWN, NOT_APPLICABLE)

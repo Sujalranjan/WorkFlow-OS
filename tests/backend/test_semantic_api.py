@@ -1,4 +1,4 @@
-"""Integration tests for Semantic Understanding API endpoints (Phase 5)."""
+"""Integration tests for Semantic Understanding API endpoints."""
 
 import os
 import tempfile

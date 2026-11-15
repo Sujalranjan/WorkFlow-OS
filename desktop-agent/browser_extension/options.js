@@ -4,6 +4,9 @@ chrome.storage.sync.get(defaults).then((s) => {
   document.getElementById("backendUrl").value = s.backendUrl;
   document.getElementById("crmOrigins").value = s.crmOrigins.join(", ");
 });
+chrome.storage.local.get({ apiKey: "" }).then(({ apiKey }) => {
+  document.getElementById("apiKey").value = apiKey;
+});
 
 document.getElementById("save").addEventListener("click", async () => {
   const backendUrl = document.getElementById("backendUrl").value.trim() || defaults.backendUrl;
@@ -13,5 +16,6 @@ document.getElementById("save").addEventListener("click", async () => {
     .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean);
   await chrome.storage.sync.set({ backendUrl, crmOrigins: crmOrigins.length ? crmOrigins : defaults.crmOrigins });
+  await chrome.storage.local.set({ apiKey: document.getElementById("apiKey").value.trim() });
   document.getElementById("saved").textContent = "Saved";
 });

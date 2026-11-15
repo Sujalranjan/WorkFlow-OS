@@ -1,5 +1,5 @@
 /**
- * TypeScript types for Workflow DNA (Phase 4).
+ * TypeScript types for Workflow DNA.
  */
 
 export interface InvariantStep {

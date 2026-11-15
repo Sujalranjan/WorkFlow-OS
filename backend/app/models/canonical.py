@@ -1,4 +1,4 @@
-"""Canonical Workflow Specification Models (Phase 6).
+"""Canonical Workflow Specification Models.
 
 Represents the formal, executable-ready workflow contract combining:
 - Deterministic structural constraints from WorkflowDNA
@@ -250,7 +250,9 @@ class ParameterUpdateRequest(BaseModel):
 
 class ApprovalActionRequest(BaseModel):
     """Payload for approving or rejecting a workflow specification."""
-    reviewer: Optional[str] = Field(default="user", description="Name or identifier of the reviewer")
+    reviewer: Optional[str] = Field(
+        default=None, description="Ignored: the signed-in user is recorded as the reviewer (kept for compatibility)"
+    )
     comments: Optional[str] = Field(default=None, description="Optional reviewer comments")
     reason: Optional[str] = Field(default=None, description="Reason for rejection if rejecting")
 

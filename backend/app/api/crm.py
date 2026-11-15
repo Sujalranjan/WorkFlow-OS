@@ -1,4 +1,4 @@
-"""CRM REST API Endpoints (Phase 15B).
+"""CRM REST API Endpoints.
 
 Provides a dedicated REST API surface for the WorkFlowOS Demo CRM application.
 Maintains a separate application boundary from the core workflow engine.
@@ -136,7 +136,7 @@ def delete_customer(customer_id: str) -> None:
 
 @router.post("/seed", response_model=List[CrmCustomer])
 def seed_demo_customers() -> List[CrmCustomer]:
-    """Seeds standard demo customer records for the hackathon storyline."""
+    """Seeds standard demo customer records for the reference workflow."""
     repo = CrmRepository()
     return repo.seed_default_customers()
 

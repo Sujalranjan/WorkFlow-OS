@@ -1,4 +1,4 @@
-"""Unit, Security, and Verification Tests for Gmail Attachment Download (Phase 15A).
+"""Unit, Security, and Verification Tests for Gmail Attachment Download.
 
 Covers all 15 required verification targets:
 1. attachment download success

@@ -1,4 +1,4 @@
-"""Executor Registry for WorkFlowOS (Phase 8 & 10).
+"""Executor Registry for WorkFlowOS.
 
 Decouples the execution engine from concrete executor implementations.
 Allows discovery and lookup of registered executors by strategy, action, and capabilities.
@@ -27,19 +27,19 @@ class ExecutorRegistry:
 
     def __init__(self) -> None:
         self._executors: Dict[str, BaseExecutor] = {}
-        # 1. Register Phase 8 implemented executor (local filesystem sandbox)
+        # 1. Register implemented executor (local filesystem sandbox)
         self.register(ControlledLocalExecutor())
 
-        # 2. Register Phase 12 & 15A implemented external executor (Gmail API)
+        # 2. Register & 15A implemented external executor (Gmail API)
         self.register(GmailApiExecutor())
 
-        # 3. Register Phase 15B implemented external executor (CRM API)
+        # 3. Register implemented external executor (CRM API)
         self.register(CrmApiExecutor())
 
-        # 4. Register Phase 15D implemented external executor (Slack API)
+        # 4. Register implemented external executor (Slack API)
         self.register(SlackApiExecutor())
 
-        # 5. Register Phase 10 architecturally represented (unimplemented) executors
+        # 5. Register architecturally represented (unimplemented) executors
         self.register(ApiIntegrationExecutor())
         self.register(ApplicationIntegrationExecutor())
         self.register(AccessibilityUiExecutor())

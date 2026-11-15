@@ -1,4 +1,4 @@
-"""Deterministic Unit & Integration Tests for Phase 11: Workflow Learning & Reliability Intelligence.
+"""Deterministic Unit & Integration Tests: Workflow Learning & Reliability Intelligence.
 
 Tests:
 1. Empty history produces a valid learning profile
@@ -20,7 +20,7 @@ Tests:
 17. Learning does not modify approval state
 18. Learning does not execute workflows
 19. Learning does not make external requests
-20. Existing Phase 0–10 tests remain passing
+20. Existing tests remain passing
 """
 
 from datetime import datetime, timezone
@@ -631,7 +631,7 @@ def test_learning_does_not_execute_workflows(engine, repos):
 def test_learning_does_not_make_external_requests(engine, repos, monkeypatch):
     import urllib.request
     def fail_network(*args, **kwargs):
-        raise RuntimeError("External network request forbidden in Phase 11 learning")
+        raise RuntimeError("External network request forbidden learning")
 
     monkeypatch.setattr(urllib.request, "urlopen", fail_network)
 

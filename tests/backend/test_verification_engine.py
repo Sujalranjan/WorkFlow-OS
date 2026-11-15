@@ -1,4 +1,4 @@
-"""Tests for Phase 9: Post-Execution Verification and Evidence Engine.
+"""Tests: Post-Execution Verification and Evidence Engine.
 
 Covers:
 1. Verification model creation

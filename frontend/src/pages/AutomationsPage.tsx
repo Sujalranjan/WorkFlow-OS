@@ -9,7 +9,7 @@ import {
   setTriggerEnabled,
 } from '../api';
 import { CanonicalWorkflowSpec } from '../types/canonical';
-import { Alert, Badge, Empty, Loading, PageHeader, href, timeAgo, useAction, useLoad, useRoute } from '../ui';
+import { Alert, Badge, CAN, Empty, Loading, PageHeader, href, timeAgo, useAction, useLoad, useRoute, useSession } from '../ui';
 
 export const AutomationsPage: React.FC = () => {
   const [, preselect] = useRoute();
@@ -18,6 +18,7 @@ export const AutomationsPage: React.FC = () => {
     return { triggers, workflows, runs };
   }, [], 20000);
   const action = useAction();
+  const canManage = useSession().can(CAN.manageTriggers);
 
   const automatable = (data.data?.workflows || []).filter(
     (w) => w.approval_state.state === 'approved' && w.steps.some((s) => s.catalog_action === 'gmail.search_email'),
@@ -39,14 +40,16 @@ export const AutomationsPage: React.FC = () => {
       {action.error && <Alert>{action.error}</Alert>}
       {action.notice && <Alert tone="ok">{action.notice}</Alert>}
 
-      <NewTrigger
+      {!canManage && <Alert tone="info">Only admins can create or change email triggers.</Alert>}
+
+      {canManage && <NewTrigger
         workflows={automatable}
         preselect={preselect}
         busy={action.busy !== null}
         onCreate={(input) =>
           after(action.run('create', () => createTrigger(input), 'Saved. New matching emails will show up in your Inbox.'))
         }
-      />
+      />}
 
       <section className="card">
         <h2>Email triggers</h2>
@@ -77,7 +80,7 @@ export const AutomationsPage: React.FC = () => {
                     </div>
                     {t.last_error && <div className="error-text small">{t.last_error}</div>}
                   </div>
-                  <div className="actions">
+                  {canManage && <div className="actions">
                     <button
                       className="btn-secondary"
                       disabled={action.busy !== null}
@@ -115,7 +118,7 @@ export const AutomationsPage: React.FC = () => {
                     >
                       Delete
                     </button>
-                  </div>
+                  </div>}
                 </li>
               );
             })}

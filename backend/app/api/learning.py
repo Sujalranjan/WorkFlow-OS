@@ -1,4 +1,4 @@
-"""Workflow Learning & Reliability Intelligence API Router (Phase 11).
+"""Workflow Learning & Reliability Intelligence API Router.
 
 Provides endpoints to:
 - Retrieve workflow reliability profile & step metrics: GET /api/workflows/{workflow_id}/learning

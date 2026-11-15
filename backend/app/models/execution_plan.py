@@ -1,4 +1,4 @@
-"""Execution Plan & Dry Run Simulation Models (Phase 7).
+"""Execution Plan & Dry Run Simulation Models.
 
 Represents:
 - Deterministic execution plan derived from an APPROVED CanonicalWorkflowSpec.
@@ -75,7 +75,7 @@ class ExpectedStateChange(BaseModel):
     expected_after_state: str = Field(..., description="Expected state after step would execute")
     actual_state: str = Field(
         default="UNTOUCHED (Simulation Mode - No Real Actions Executed)",
-        description="Actual state in real environment (strictly untouched in Phase 7)",
+        description="Actual state in real environment (strictly untouched)",
     )
 
 
@@ -84,7 +84,7 @@ class StepExecutionStrategy(BaseModel):
     strategy: ExecutionStrategy = Field(..., description="Selected execution strategy")
     reason: str = Field(..., description="Explainable reason for selecting this strategy")
     target_technology: str = Field(..., description="Underlying mechanism or integration technology")
-    # Phase 10: Multi-strategy & capability enrichment
+    # Multi-strategy & capability enrichment
     canonical_strategy: Optional[str] = Field(default=None, description="Canonical ExecutionStrategyType token")
     selection_reason: Optional[str] = Field(default=None, description="Deterministic strategy selection reason")
     available_strategies_considered: List[str] = Field(default_factory=list, description="All strategies evaluated")
@@ -111,7 +111,7 @@ class PlannedStep(BaseModel):
         description="Map of parameter names to resolved values",
     )
     execution_strategy: StepExecutionStrategy = Field(..., description="Planned strategy and rationale")
-    risk: StepRisk = Field(..., description="Inherited risk classification from Phase 6")
+    risk: StepRisk = Field(..., description="Inherited risk classification")
     expected_result: str = Field(..., description="What this step is expected to accomplish")
     external_change: bool = Field(default=False, description="Whether this step would mutate external state")
     requires_confirmation: bool = Field(default=False, description="Whether explicit human confirmation is required")
@@ -136,7 +136,7 @@ class DryRunStepResult(BaseModel):
     expected_state_transition: str
     simulated_output: Dict[str, Any] = Field(default_factory=dict)
     notes: str
-    # Phase 10: Multi-strategy & capability fields
+    # Multi-strategy & capability fields
     selected_strategy: Optional[str] = Field(default=None, description="Selected strategy or 'NONE'")
     candidate_strategies: List[str] = Field(default_factory=list, description="Strategies considered")
     selection_reason: Optional[str] = Field(default=None, description="Why this strategy was selected or blocked")
@@ -172,7 +172,7 @@ class ExecutionPlan(BaseModel):
     planned_steps: List[PlannedStep] = Field(default_factory=list)
     preconditions: List[PreconditionCheck] = Field(default_factory=list)
     boundaries: WorkflowBoundaries = Field(..., description="Workflow duration and step boundaries")
-    risk_assessment: RiskAssessment = Field(..., description="Inherited Phase 6 risk assessment")
+    risk_assessment: RiskAssessment = Field(..., description="Inherited risk assessment")
     expected_effects: List[ExpectedStateChange] = Field(default_factory=list)
     excluded_steps: List[Dict[str, str]] = Field(
         default_factory=list,

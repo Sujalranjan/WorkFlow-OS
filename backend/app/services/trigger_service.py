@@ -142,9 +142,9 @@ class TriggerService:
 
         error: Optional[str] = None
         if not self.gmail.is_configured():
-            error = "Gmail is not configured (set GMAIL_ENABLED and provide credentials.json)."
+            error = "Gmail is not set up. Connect Gmail in Settings."
         elif not self.gmail.is_authenticated():
-            error = "Gmail is not authorized yet (complete the OAuth sign-in to create token.json)."
+            error = "Gmail is not connected yet. Use Connect Gmail in Settings."
         else:
             query = f"({trigger.gmail_query}) after:{trigger.active_since}"
             try:
@@ -222,6 +222,7 @@ class TriggerService:
                 execution_plan_id=plan.execution_plan_id,
                 idempotency_key=f"workflow-run:{run.run_id}",
                 execution_mode=ExecutionMode.LIVE,
+                executed_by=decided_by,
             )
         except Exception as e:  # noqa: BLE001 - the run must never be left stuck in RUNNING
             logger.warning("Run %s could not execute: %s", run_id, e)

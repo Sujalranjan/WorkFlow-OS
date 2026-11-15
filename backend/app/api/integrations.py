@@ -1,0 +1,107 @@
+"""Gmail and Slack connection settings (Settings page)."""
+
+from typing import Any, Dict, Optional
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
+
+from app import config
+from app.security import current_actor
+from app.services.integrations import IntegrationError, get_integration_service
+
+router = APIRouter(prefix="/api/integrations", tags=["integrations"])
+
+
+class GmailClientRequest(BaseModel):
+    client_id: str = Field(..., min_length=10, max_length=300)
+    client_secret: str = Field(..., min_length=1, max_length=300)
+
+
+class GmailConnectRequest(BaseModel):
+    return_to: Optional[str] = Field(default=None, description="Dashboard origin to come back to after sign-in")
+
+
+class GmailConnectResponse(BaseModel):
+    authorization_url: str
+
+
+class SlackSettingsRequest(BaseModel):
+    bot_token: str = Field(..., min_length=10, max_length=300)
+    channel_id: str = Field(..., min_length=2, max_length=80)
+
+
+def _bad_request(e: IntegrationError) -> HTTPException:
+    return HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+@router.get("")
+def describe_integrations() -> Dict[str, Any]:
+    return get_integration_service().describe()
+
+
+@router.put("/gmail/client")
+def save_gmail_client(req: GmailClientRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_gmail_client(req.client_id, req.client_secret, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.delete("/gmail/client")
+def remove_gmail_client() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.remove_gmail_client()
+    return service.describe()
+
+
+@router.post("/gmail/connect", response_model=GmailConnectResponse)
+def connect_gmail(req: GmailConnectRequest = GmailConnectRequest(), actor: str = Depends(current_actor)) -> GmailConnectResponse:
+    try:
+        url = get_integration_service().start_gmail_connect(actor, req.return_to)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return GmailConnectResponse(authorization_url=url)
+
+
+@router.get("/gmail/callback", include_in_schema=False)
+def gmail_callback(
+    state: str = Query(default=""),
+    code: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+) -> RedirectResponse:
+    """Google redirects the browser here. Public route: the single-use `state` authenticates it."""
+    fallback = config.FRONTEND_ORIGINS[0] if config.FRONTEND_ORIGINS else ""
+    try:
+        return_to, _ = get_integration_service().finish_gmail_connect(state, code, error)
+        target = f"{return_to or fallback}/#/settings/gmail-connected"
+    except IntegrationError as e:
+        target = f"{e.return_to or fallback}/#/settings/gmail-error/{quote(e.code)}"
+    return RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.delete("/gmail")
+def disconnect_gmail() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.disconnect_gmail()
+    return service.describe()
+
+
+@router.put("/slack")
+def save_slack(req: SlackSettingsRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_slack(req.bot_token, req.channel_id, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.delete("/slack")
+def remove_slack() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.remove_slack()
+    return service.describe()

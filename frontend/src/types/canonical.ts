@@ -1,5 +1,5 @@
 /**
- * TypeScript definitions for Canonical Workflow Specification (Phase 6).
+ * TypeScript definitions for Canonical Workflow Specification.
  */
 
 import { DNAEvidence, OrderingConstraint, WorkflowBoundaries } from './dna';

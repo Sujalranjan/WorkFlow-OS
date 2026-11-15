@@ -1,4 +1,4 @@
-"""CRM Verification Strategy (Phase 15B).
+"""CRM Verification Strategy.
 
 Deterministically verifies CRM execution outcomes against the CRM API:
 1. find_customer: Confirms customer lookup succeeded with matching records.

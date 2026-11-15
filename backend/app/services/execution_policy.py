@@ -1,11 +1,11 @@
-"""Execution Policy / Guardrails Service (Phase 8).
+"""Execution Policy / Guardrails Service.
 
 Validates safety policies before ANY step or plan execution:
 1. Workflow must be in ApprovalState.APPROVED.
 2. Execution plan must correspond to the approved workflow version.
 3. All required parameters must be resolved (not UNRESOLVED).
 4. Selected strategy must be supported by an available executor.
-5. If step is external, verifies whether policy explicitly permits it (Phase 8 strictly denies external service mutations).
+5. If step is external, verifies whether policy explicitly permits it.
 6. Sandbox boundary validation.
 """
 
@@ -68,7 +68,7 @@ class ExecutionPolicyEngine:
         if step.risk.risk_category in (RiskCategory.EXTERNAL_CHANGE, RiskCategory.COMMUNICATION):
             violations.append(
                 f"External service mutation policy violation: Step '{step.action}' targets '{step.application}' "
-                f"with category '{step.risk.risk_category.value}'. WorkFlowOS permits controlled local actions only in Phase 10."
+                f"with category '{step.risk.risk_category.value}'. WorkFlowOS permits controlled local actions only."
             )
 
         # 2. Executor availability: Must have an implemented executor

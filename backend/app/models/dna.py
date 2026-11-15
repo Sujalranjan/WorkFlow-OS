@@ -1,4 +1,4 @@
-"""Canonical Workflow DNA Models (Phase 4).
+"""Canonical Workflow DNA Models.
 
 Represents the extracted structural DNA of a discovered workflow candidate:
 - Invariant steps (occur across 100% of supporting sessions)

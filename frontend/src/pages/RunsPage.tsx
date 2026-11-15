@@ -1,7 +1,7 @@
 import React from 'react';
 import { getVerification, listExecutions, listWorkflows, verifyExecution } from '../api';
 import { RunSteps } from '../components/RunSteps';
-import { Alert, Badge, Empty, Loading, PageHeader, formatTime, href, timeAgo, useAction, useLoad } from '../ui';
+import { Alert, Badge, CAN, Empty, Loading, PageHeader, formatTime, href, timeAgo, useAction, useLoad, useSession } from '../ui';
 
 export const RunsPage: React.FC<{ executionId?: string }> = ({ executionId }) =>
   executionId ? <RunDetail executionId={executionId} /> : <RunList />;
@@ -57,6 +57,7 @@ const RunDetail: React.FC<{ executionId: string }> = ({ executionId }) => {
     return { record, verification, workflow };
   }, [executionId]);
   const action = useAction();
+  const { can } = useSession();
 
   const back = (
     <a href={href('runs')} className="back">
@@ -98,7 +99,7 @@ const RunDetail: React.FC<{ executionId: string }> = ({ executionId }) => {
       <section className="card">
         <div className="card-head">
           <h2>Steps</h2>
-          {record.status === 'COMPLETED' && (
+          {record.status === 'COMPLETED' && can(CAN.verify) && (
             <button
               className="btn-secondary"
               disabled={action.busy !== null}

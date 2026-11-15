@@ -1,6 +1,6 @@
-"""Architecturally Represented (Unimplemented) Executors for WorkFlowOS (Phase 10).
+"""Architecturally Represented (Unimplemented) Executors for WorkFlowOS.
 
-Phase 10 explicitly defines the canonical multi-strategy execution architecture,
+explicitly defines the canonical multi-strategy execution architecture,
 distinguishing between SUPPORTED/IMPLEMENTED executors and KNOWN/REPRESENTED executors.
 
 The following executors represent future integration boundaries:
@@ -44,7 +44,7 @@ class RepresentedUnimplementedExecutor(BaseExecutor):
             supported_actions=supported_actions,
             supported_targets=supported_targets,
             supported_risk_levels=supported_risk_levels,
-            implemented=False,  # STRICT: Never true in Phase 10
+            implemented=False,  # STRICT: Never true
             requires_external_access=requires_external_access,
             supports_verification=False,
             priority=priority,
@@ -68,7 +68,7 @@ class RepresentedUnimplementedExecutor(BaseExecutor):
             False,
             [
                 f"Executor '{self.name}' for strategy '{self._capability.strategy_type.value}' "
-                f"is architecturally represented but NOT implemented in Phase 10."
+                f"is architecturally represented but NOT implemented."
             ],
         )
 
@@ -139,7 +139,7 @@ class BrowserAutomationExecutor(RepresentedUnimplementedExecutor):
             supported_risk_levels=["LOW", "MEDIUM"],
             priority=4,
             requires_external_access=True,
-            description="Web browser DOM automation. Architectural stub (no Playwright/Selenium in Phase 10).",
+            description="Web browser DOM automation. Architectural stub (no Playwright/Selenium).",
         )
 
 
@@ -155,5 +155,5 @@ class UiFallbackExecutor(RepresentedUnimplementedExecutor):
             supported_risk_levels=["LOW"],
             priority=5,
             requires_external_access=False,
-            description="Computer-vision / coordinate-based UI fallback. Architectural stub (no PyAutoGUI in Phase 10).",
+            description="Computer-vision / coordinate-based UI fallback. Architectural stub (no PyAutoGUI).",
         )

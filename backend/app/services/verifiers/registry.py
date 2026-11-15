@@ -1,4 +1,4 @@
-"""Verification Strategy Registry (Phase 9).
+"""Verification Strategy Registry.
 
 Maintains available verification strategies and resolves verifiers for planned steps.
 """
@@ -21,7 +21,7 @@ class VerificationStrategyRegistry:
 
     def __init__(self) -> None:
         self._strategies: Dict[str, BaseVerificationStrategy] = {}
-        # Register default verification strategies (Phase 9, Phase 12, Phase 15B, Phase 15D)
+        # Register default verification strategies
         self.register(FileSystemVerificationStrategy())
         self.register(StructuredOutputVerificationStrategy())
         self.register(GmailVerificationStrategy())

@@ -89,3 +89,23 @@ def test_agent_dispatch() -> None:
         assert result == mock_response
         mock_send.assert_called_once_with(evt)
         assert agent.queue.is_empty() is True
+
+
+def test_backend_client_sends_api_key(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from desktop_agent.client import BackendClient
+    from desktop_agent.models.event import ActivityEvent
+
+    captured = {}
+
+    def fake_post(url, json, timeout, headers):
+        captured["headers"] = headers
+        res = MagicMock()
+        res.json.return_value = {"status": "success"}
+        return res
+
+    monkeypatch.setattr("desktop_agent.client.requests.post", fake_post)
+    monkeypatch.setenv("WORKFLOWOS_API_KEY", "wfos_test-key")
+    BackendClient(backend_url="http://backend").send_event(ActivityEvent(event_type="window_focused", source="test"))
+    assert captured["headers"]["Authorization"] == "Bearer wfos_test-key"

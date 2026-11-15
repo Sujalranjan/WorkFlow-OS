@@ -1,4 +1,4 @@
-"""Workflow Learning & Reliability Intelligence Engine (Phase 11).
+"""Workflow Learning & Reliability Intelligence Engine.
 
 Analyzes historical execution and post-execution verification audits to deterministically:
 1. Calculate workflow-level and step-level reliability metrics.

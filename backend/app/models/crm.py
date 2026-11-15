@@ -1,4 +1,4 @@
-"""Normalized CRM Models (Phase 15B).
+"""Normalized CRM Models.
 
 Defines:
 - CrmCustomer: Canonical customer entity in the demo CRM.

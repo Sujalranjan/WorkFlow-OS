@@ -1,6 +1,6 @@
-"""Phase 16: Full Live End-to-End Workflow Tests.
+"""Full Live End-to-End Workflow Tests.
 
-Orchestrates the hackathon problem statement's core routine:
+Orchestrates the reference core routine:
 Gmail search_email
     ↓
 Gmail download_attachment
@@ -97,7 +97,7 @@ from app.services.executors.registry import ExecutorRegistry
 from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.gmail_client import GmailApiClient
 from app.services.learning_engine import LearningEngine
-from app.services.phase16_workflow import Phase16Orchestrator, build_phase16_canonical_spec
+from app.services.reference_workflow import WorkflowOrchestrator, build_reference_spec
 from app.services.slack_client import SlackApiClient
 from app.services.verification_engine import VerificationEngine
 from app.services.verifiers.crm_verifier import CrmVerificationStrategy
@@ -109,8 +109,8 @@ from app.services.verifiers.slack_verifier import SlackVerificationStrategy
 
 @pytest.fixture
 def isolated_orchestrator(tmp_path):
-    """Sets up an isolated Phase16Orchestrator with in-memory SQLite repositories and sandbox."""
-    db_file = str(tmp_path / "test_phase16.db")
+    """Sets up an isolated WorkflowOrchestrator with in-memory SQLite repositories and sandbox."""
+    db_file = str(tmp_path / "test_reference.db")
     sandbox_dir = str(tmp_path / "sandbox")
 
     can_repo = CanonicalWorkflowRepository(db_path=db_file)
@@ -137,7 +137,7 @@ def isolated_orchestrator(tmp_path):
         learning_repo=lrn_repo,
     )
 
-    orch = Phase16Orchestrator(
+    orch = WorkflowOrchestrator(
         canonical_repo=can_repo,
         plan_repo=plan_repo,
         exec_repo=exec_repo,
@@ -154,9 +154,9 @@ def isolated_orchestrator(tmp_path):
 # =========================================================================
 # 1. Workflow Spec Construction & Structure
 # =========================================================================
-def test_phase16_canonical_spec_structure():
-    """Validates that build_phase16_canonical_spec produces exactly 5 coherent steps."""
-    spec = build_phase16_canonical_spec()
+def test_reference_canonical_spec_structure():
+    """Validates that build_reference_spec produces exactly 5 coherent steps."""
+    spec = build_reference_spec()
     assert spec.workflow_id is not None
     assert len(spec.steps) == 5
 
@@ -183,7 +183,7 @@ def test_phase16_canonical_spec_structure():
 # =========================================================================
 # 2. Approval Gate Enforcement (Unapproved Spec Rejection)
 # =========================================================================
-def test_phase16_unapproved_workflow_rejected(isolated_orchestrator):
+def test_reference_unapproved_workflow_rejected(isolated_orchestrator):
     """Unapproved workflow cannot create an execution plan or execute (0 side effects)."""
     orch, _ = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=False)
@@ -196,7 +196,7 @@ def test_phase16_unapproved_workflow_rejected(isolated_orchestrator):
     assert len(orch.plan_repo.list_all()) == 0
 
 
-def test_phase16_human_approval_enables_planning(isolated_orchestrator):
+def test_reference_human_approval_enables_planning(isolated_orchestrator):
     """Human approval unlocks execution plan generation."""
     orch, _ = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=False)
@@ -216,7 +216,7 @@ def test_phase16_human_approval_enables_planning(isolated_orchestrator):
 # =========================================================================
 # 3. Dry-Run Execution (Guaranteed ZERO external calls / mutations)
 # =========================================================================
-def test_phase16_dry_run_simulation(isolated_orchestrator):
+def test_reference_dry_run_simulation(isolated_orchestrator):
     """Dry run produces a plan simulation with ZERO mutations."""
     orch, _ = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=True)
@@ -245,7 +245,7 @@ def test_phase16_dry_run_simulation(isolated_orchestrator):
 # =========================================================================
 # 4. Mocked Real Execution Path & Parameter Flow
 # =========================================================================
-def test_phase16_mocked_execution_parameter_flow(isolated_orchestrator):
+def test_reference_mocked_execution_parameter_flow(isolated_orchestrator):
     """Executes the complete 5-step workflow with mocked external clients and validates parameter flow."""
     orch, tmp_path = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=True)
@@ -303,7 +303,7 @@ def test_phase16_mocked_execution_parameter_flow(isolated_orchestrator):
     )
     mock_slack.verify_message.return_value = (
         True,
-        {"ts": "1711539999.000100", "text": "WorkFlowOS Phase 16 E2E — Customer replacement processed for Rahul Sharma"},
+        {"ts": "1711539999.000100", "text": "WorkFlowOS E2E — Customer replacement processed for Rahul Sharma"},
         "Verified via conversations.history",
     )
 
@@ -531,7 +531,7 @@ def test_partial_failure_case_d_slack_failure_after_crm_success(isolated_orchest
 # =========================================================================
 # 6. Idempotency Protection
 # =========================================================================
-def test_phase16_idempotency_protection(isolated_orchestrator):
+def test_reference_idempotency_protection(isolated_orchestrator):
     """Executing plan with an existing idempotency_key returns cached record without re-running."""
     orch, _ = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=True)
@@ -556,7 +556,7 @@ def test_phase16_idempotency_protection(isolated_orchestrator):
 # =========================================================================
 # 7. Security: Token Exclusion
 # =========================================================================
-def test_phase16_security_token_exclusion(isolated_orchestrator):
+def test_reference_security_token_exclusion(isolated_orchestrator):
     """Confirms credentials, bearer tokens, and secrets are strictly excluded from audit records."""
     orch, _ = isolated_orchestrator
     spec = orch.prepare_workflow(auto_approve=True)
@@ -574,7 +574,7 @@ def test_phase16_security_token_exclusion(isolated_orchestrator):
 # 8. Real Live E2E Integration Test (Conditional on Live Environment)
 # =========================================================================
 @pytest.mark.live
-def test_live_phase16_e2e_workflow_conditional(tmp_path):
+def test_live_reference_workflow_conditional(tmp_path):
     """Conditional real live demonstration exercising real Gmail API, real CRM API, and real Slack API.
 
     Only runs when:
@@ -588,7 +588,7 @@ def test_live_phase16_e2e_workflow_conditional(tmp_path):
 
     if not token or not channel or str(token).startswith("xoxb-placeholder") or not token_json_exists:
         pytest.skip(
-            f"LIVE PHASE 16 E2E TEST: SKIPPED (live credentials not fully present: "
+            f"LIVE REFERENCE WORKFLOW TEST: SKIPPED (live credentials not fully present: "
             f"slack_token={bool(token and not str(token).startswith('xoxb-placeholder'))}, "
             f"slack_channel={bool(channel)}, "
             f"gmail_token={token_json_exists})"
@@ -597,7 +597,7 @@ def test_live_phase16_e2e_workflow_conditional(tmp_path):
     # 1. Initialize real clients
     gmail_client = GmailApiClient(credentials_path="credentials.json", token_path="token.json")
     if not gmail_client.is_authenticated():
-        pytest.skip("LIVE PHASE 16 E2E TEST: SKIPPED — Gmail API client not authenticated.")
+        pytest.skip("LIVE REFERENCE WORKFLOW TEST: SKIPPED — Gmail API client not authenticated.")
 
     crm_client = CrmApiClient(base_url="http://127.0.0.1:8001/api/crm")
     # Ensure CRM test customer exists and is in 'pending_replacement' state on port 8001
@@ -620,12 +620,12 @@ def test_live_phase16_e2e_workflow_conditional(tmp_path):
                 {"status": "pending_replacement", "notes": "Reset for live E2E run"},
             )
     except Exception as e:
-        pytest.skip(f"LIVE PHASE 16 E2E TEST: SKIPPED — Demo CRM service on port 8001 unavailable: {e}")
+        pytest.skip(f"LIVE REFERENCE WORKFLOW TEST: SKIPPED — Demo CRM service on port 8001 unavailable: {e}")
 
     slack_client = SlackApiClient(bot_token=token, default_channel_id=channel)
 
-    # 2. Build and setup Phase 16 Orchestrator with real clients
-    orch = Phase16Orchestrator()
+    # 2. Build and setup Orchestrator with real clients
+    orch = WorkflowOrchestrator()
     orch.engine.registry.register(GmailApiExecutor(client=gmail_client))
     orch.engine.registry.register(CrmApiExecutor(client=crm_client))
     orch.engine.registry.register(SlackApiExecutor(client=slack_client))

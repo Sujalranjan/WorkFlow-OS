@@ -29,7 +29,7 @@ from app.services.executors.crm_executor import CrmApiExecutor, _pick_customer
 from app.services.executors.gmail_executor import GmailApiExecutor
 from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.gmail_client import GmailApiClient
-from app.services.phase16_workflow import Phase16Orchestrator
+from app.services.reference_workflow import WorkflowOrchestrator
 from app.services.slack_client import SlackApiClient
 from app.services.trigger_service import TriggerError, TriggerService
 from app.services.verifiers.crm_verifier import CrmVerificationStrategy
@@ -64,10 +64,10 @@ def _message(mid="msg-1", sender="Rahul Sharma <rahul.sharma@example.com>"):
 
 
 class Harness:
-    """Phase 16 workflow + TriggerService wired to mocked Gmail/CRM/Slack clients."""
+    """workflow + TriggerService wired to mocked Gmail/CRM/Slack clients."""
 
     def __init__(self, tmp_path, approved=True):
-        self.orch = Phase16Orchestrator()
+        self.orch = WorkflowOrchestrator()
         self.spec = self.orch.prepare_workflow(auto_approve=approved, reviewer="Ops Lead")
 
         self.gmail = MagicMock(spec=GmailApiClient)
@@ -172,7 +172,7 @@ def test_poll_records_error_when_gmail_not_authorized(h):
     h.gmail.is_authenticated.return_value = False
     trigger = h.trigger()
     result = h.service.poll(trigger.trigger_id)
-    assert result.new_runs == [] and "not authorized" in result.error
+    assert result.new_runs == [] and "not connected" in result.error
     assert h.service.repo.get_trigger(trigger.trigger_id).last_error == result.error
     h.gmail.search_messages.assert_not_called()
 

@@ -1,4 +1,4 @@
-"""Gmail API Executor (Phase 12 & Phase 15A).
+"""Gmail API Executor.
 
 Implements real external execution integrations for Gmail:
 - search_email: Read-only search returning normalized message summaries.
@@ -458,7 +458,7 @@ class GmailApiExecutor(BaseExecutor):
                 status=ExecutionStepStatus.BLOCKED,
                 selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
                 blocked_reason="INTEGRATION_UNAVAILABLE",
-                error="Gmail API integration is not configured. Provide GMAIL_CREDENTIALS_PATH or GMAIL_TOKEN_PATH.",
+                error="Gmail is not configured. Connect Gmail in Settings.",
                 start_time=start_time,
                 end_time=datetime.now(timezone.utc).isoformat(),
             )
@@ -680,7 +680,7 @@ class GmailApiExecutor(BaseExecutor):
                 status=ExecutionStepStatus.BLOCKED,
                 selected_strategy=ExecutionStrategyType.API_INTEGRATION.value,
                 blocked_reason="INTEGRATION_UNAVAILABLE",
-                error="Gmail API integration is not configured. Provide GMAIL_CREDENTIALS_PATH or GMAIL_TOKEN_PATH.",
+                error="Gmail is not configured. Connect Gmail in Settings.",
                 start_time=start_time,
                 end_time=datetime.now(timezone.utc).isoformat(),
             )
