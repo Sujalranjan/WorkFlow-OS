@@ -11,8 +11,30 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend tests
+    name: Backend tests (${{ matrix.database }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - database: sqlite
+            test_database_url: ""
+          - database: postgres
+            test_database_url: postgresql+psycopg://wfos:wfos@localhost:5432/wfos_test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wfos
+          POSTGRES_PASSWORD: wfos
+          POSTGRES_DB: wfos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wfos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,6 +48,9 @@ jobs:
         run: pip install -r backend/requirements.txt -r desktop-agent/requirements.txt
       - name: Run pytest
         # Live Gemini/Slack/Gmail tests are skipped: no secrets are configured in CI.
+        # The postgres leg runs the same suite with every test database as a Postgres schema.
+        env:
+          WORKFLOWOS_TEST_DATABASE_URL: ${{ matrix.test_database_url }}
         run: python -m pytest tests -q
 
   frontend:

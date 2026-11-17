@@ -149,7 +149,14 @@ Credentials saved in Settings are encrypted with `WORKFLOWOS_SECRET_KEY`, or wit
 PYTHONPATH=".;backend;desktop-agent" pytest tests -q
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs this suite, type-checks and builds the frontend, and builds and starts the Docker stack on every push and pull request.
+To run the same suite on Postgres, point it at a throwaway database. Each test gets its own schema, and the schemas are dropped afterwards:
+
+```bash
+docker run -d --name wfos-test-pg -e POSTGRES_USER=wfos -e POSTGRES_PASSWORD=wfos -e POSTGRES_DB=wfos_test -p 127.0.0.1:55432:5432 postgres:16-alpine
+WORKFLOWOS_TEST_DATABASE_URL=postgresql+psycopg://wfos:wfos@127.0.0.1:55432/wfos_test PYTHONPATH=".;backend;desktop-agent" pytest tests -q
+```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the suite on both SQLite and Postgres, type-checks and builds the frontend, and builds and starts the Docker stack on every push and pull request.
 
 Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 
