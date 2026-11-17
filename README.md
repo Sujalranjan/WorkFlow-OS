@@ -162,6 +162,27 @@ Each test session uses a throwaway database, CRM database and sandbox, and strip
 
 The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [reference_workflow.py](backend/app/services/reference_workflow.py), and then execute and verify it.
 
+## Database and migrations
+
+WorkFlowOS uses SQLite by default (`DATABASE_PATH`, default `workflowos.db`). Set `DATABASE_URL` to use Postgres instead (`postgresql+psycopg://user:password@host:5432/db`).
+
+The schema is versioned with Alembic migrations in [backend/app/migrations](backend/app/migrations). The API applies them when it starts (`MIGRATE_ON_START=true`, the default). To apply or inspect them by hand:
+
+```bash
+python backend/app/cli.py db upgrade   # apply migrations
+python backend/app/cli.py db current   # show the schema revision
+python backend/app/cli.py db check     # fails if the database and the code's tables differ
+```
+
+Databases created before migrations existed are adopted automatically: existing tables and rows are kept, and missing tables and indexes are added.
+
+To change the schema, edit the tables in [backend/app/db.py](backend/app/db.py), then generate a migration and review it before committing:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe the change"
+```
+
 ## Adding a new executable action
 
 1. Add a `CatalogAction` to `ACTION_CATALOG` (executor name, risk, parameters, outputs).

@@ -8,6 +8,7 @@ python-dotenv>=1.0.0,<2.0.0
 # Database: SQLite (default) or Postgres via DATABASE_URL
 sqlalchemy>=2.0.30,<2.1
 psycopg[binary]>=3.2,<4
+alembic>=1.13,<2
 
 # Authentication
 argon2-cffi>=23.1.0,<26.0.0

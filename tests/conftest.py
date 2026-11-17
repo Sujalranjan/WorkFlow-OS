@@ -44,6 +44,8 @@ os.environ.pop("DATABASE_URL", None)
 TEST_DATABASE_URL = os.getenv("WORKFLOWOS_TEST_DATABASE_URL", "").strip()
 # Prevent app.config from re-reading the developer's .env and overriding the above.
 os.environ["WORKFLOWOS_SKIP_DOTENV"] = "1"
+# Test databases get their tables directly (fast); migrations are tested in test_migrations.py.
+os.environ["MIGRATE_ON_START"] = "false"
 # Tests drive trigger polling explicitly; never start the background poller.
 os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 
@@ -59,6 +61,8 @@ import pytest  # noqa: E402
 
 import app.config  # noqa: E402,F401
 import app.db  # noqa: E402
+
+app.db.AUTO_CREATE_TABLES = True
 
 _pg_schemas = set()
 

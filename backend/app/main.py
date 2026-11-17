@@ -18,13 +18,24 @@ from app.api.integrations import router as integrations_router
 from app.api.learning import router as learning_router
 from app.api.semantic import router as semantic_router
 from app.logging_config import RequestLoggingMiddleware, setup_logging
-from app.config import FRONTEND_ORIGINS, PROJECT_NAME, TRIGGER_POLLER_ENABLED, TRIGGER_POLLER_TICK_SECONDS, VERSION
+from app.config import (
+    FRONTEND_ORIGINS,
+    MIGRATE_ON_START,
+    PROJECT_NAME,
+    TRIGGER_POLLER_ENABLED,
+    TRIGGER_POLLER_TICK_SECONDS,
+    VERSION,
+)
 from app.security import CSRF_HEADER, authorize
 from app.services.trigger_scheduler import TriggerScheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if MIGRATE_ON_START:
+        from app.migrate import upgrade
+
+        upgrade()
     scheduler = None
     if TRIGGER_POLLER_ENABLED:
         scheduler = TriggerScheduler(get_trigger_service(), tick_seconds=TRIGGER_POLLER_TICK_SECONDS)

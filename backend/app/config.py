@@ -34,6 +34,9 @@ GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_SEARCH_QUERY = os.getenv("GMAIL_SEARCH_QUERY", "from:me")
 GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "5"))
 
+# Apply database migrations when the API starts (python -m app.cli db upgrade does it by hand).
+MIGRATE_ON_START = os.getenv("MIGRATE_ON_START", "true").lower() in ("true", "1", "yes")
+
 # Email triggers: background polling of enabled triggers (each trigger has its own interval)
 TRIGGER_POLLER_ENABLED = os.getenv("TRIGGER_POLLER_ENABLED", "true").lower() in ("true", "1", "yes")
 TRIGGER_POLLER_TICK_SECONDS = float(os.getenv("TRIGGER_POLLER_TICK_SECONDS", "15"))

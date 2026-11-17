@@ -9,7 +9,9 @@ Most records are stored as one JSON document (`JSONB` on Postgres, JSON text on 
 exactly what older SQLite files already contain) next to the few columns that are filtered or
 sorted on. Timestamps are ISO-8601 UTC strings, as before.
 
-Until migrations land (Phase 2b), missing tables are created on first use.
+The schema is managed by Alembic migrations (`app/migrations`, applied by `app.migrate.upgrade()`,
+which the API runs on start). Tables are only auto-created when AUTO_CREATE_TABLES is set, which the
+test suite does so each throwaway test database is ready instantly.
 """
 
 import os
@@ -225,12 +227,15 @@ oauth_states = Table(
 
 # ---------------------------------------------------------------------- engines
 
+# Test hook: create missing tables directly from `metadata` instead of running migrations.
+AUTO_CREATE_TABLES = False
 # Test hook: maps a resolved URL to another one (the suite uses it to run on Postgres).
 url_mapper: Optional[Callable[[str], str]] = None
 # Test hook: extra create_engine() keyword arguments for non-SQLite engines.
 engine_options: Dict[str, Any] = {}
 
 _engines: Dict[str, Engine] = {}
+_tables_created: set = set()
 _lock = threading.Lock()
 
 
@@ -261,15 +266,18 @@ def _new_engine(url: str) -> Engine:
     return create_engine(url, **options)
 
 
-def get_engine(target: Optional[str] = None) -> Engine:
-    """Engine for `target` (cached per URL), with all tables created."""
+def get_engine(target: Optional[str] = None, create_tables: Optional[bool] = None) -> Engine:
+    """Engine for `target` (cached per URL). Creates missing tables only if asked (tests)."""
     url = database_url(target)
+    create = AUTO_CREATE_TABLES if create_tables is None else create_tables
     with _lock:
         engine = _engines.get(url)
         if engine is None:
             engine = _new_engine(url)
-            metadata.create_all(engine)
             _engines[url] = engine
+        if create and url not in _tables_created:
+            metadata.create_all(engine)
+            _tables_created.add(url)
         return engine
 
 
@@ -278,6 +286,7 @@ def dispose_engines() -> None:
         for engine in _engines.values():
             engine.dispose()
         _engines.clear()
+        _tables_created.clear()
 
 
 # --------------------------------------------------------------------- helpers

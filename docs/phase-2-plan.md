@@ -55,11 +55,18 @@ mergeable on its own.
   fixed along the way: `EventRepository.get_by_id` had no FROM clause, `insert_ignore` now uses
   RETURNING (psycopg reports rowcount -1), OAuth states are consumed with DELETE ... RETURNING.
 
-### 2b: Migrations
-- Alembic in `backend/migrations/`, baseline revision = today's schema.
-- `python -m app.cli db upgrade`; the Docker API container runs it on start (before uvicorn).
-- Remove every `CREATE TABLE IF NOT EXISTS`; a test asserts models and migrations agree
-  (`alembic check`).
+### 2b: Migrations (done)
+- Alembic in `backend/app/migrations/` (inside the package so the Docker image ships it), baseline
+  revision `0001` = the 2a schema, written out explicitly so it never changes.
+- The baseline adopts pre-migration databases: existing tables and rows are kept, and missing
+  tables and indexes are added. Verified on a copy of a real install (rows unchanged, Gmail token
+  still decrypts). Downgrading the baseline is refused (it would drop all data).
+- The API runs `app.migrate.upgrade()` on start (`MIGRATE_ON_START`, default on); on Postgres a
+  migration holds an advisory lock so concurrent starts (API + worker) are safe.
+  `python -m app.cli db upgrade|current|check`; user CLI commands migrate first.
+- Tables are no longer created at runtime; only the test suite sets `AUTO_CREATE_TABLES`.
+  `tests/backend/test_migrations.py` asserts on SQLite and Postgres that migrating an empty
+  database matches `app.db` exactly.
 
 ### 2c: Postgres in Docker + moving existing data
 - `postgres:16` service with a named volume and healthcheck; API and worker wait for it.
