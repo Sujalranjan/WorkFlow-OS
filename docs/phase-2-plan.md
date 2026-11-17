@@ -68,13 +68,17 @@ mergeable on its own.
   `tests/backend/test_migrations.py` asserts on SQLite and Postgres that migrating an empty
   database matches `app.db` exactly.
 
-### 2c: Postgres in Docker + moving existing data
-- `postgres:16` service with a named volume and healthcheck; API and worker wait for it.
-- `python -m app.cli db import-sqlite /data/workflowos.db`: copies every table (including the
-  encrypted credentials, so Gmail stays connected; the Fernet key is unchanged) into Postgres,
-  idempotent, with row counts printed and checked.
-- README: backup/restore (`pg_dump`), and keeping `WORKFLOWOS_SECRET_KEY`/key file backed up
-  separately.
+### 2c: Postgres in Docker + moving existing data (done)
+- `postgres:16-alpine` service (volume `workflowos-pg`, healthcheck, not published to the host);
+  the API gets `DATABASE_URL` and waits for it. `SECRET_KEY_PATH` pins the encryption key to the data
+  volume. The Demo CRM stays on SQLite.
+- `python -m app.cli db import-sqlite /data/workflowos.db` (`app/db_import.py`): migrates the target,
+  copies every table present in the source (legacy or current format), skips rows already present
+  (re-runnable, never overwrites), moves the Postgres id sequence, then checks that every source key
+  is in the target. The source file is only read.
+- Rehearsed with a copy of a real install: 32/32 rows copied, re-run copied 0, and the imported Gmail
+  connection passed a live read-only access check from Postgres.
+- README: upgrade steps, backups with `pg_dump` plus the key file, restore.
 
 ### 2d: Job queue and worker
 - `jobs` table: id, kind, payload, status (`queued/running/succeeded/failed/needs_attention`),

@@ -6,6 +6,7 @@
     python -m app.cli db upgrade     # apply database migrations (the API also does this on start)
     python -m app.cli db current     # show the schema revision
     python -m app.cli db check       # exit 1 if the database and the code's tables differ
+    python -m app.cli db import-sqlite /data/workflowos.db   # copy a SQLite database into DATABASE_URL
 
 The password is asked for interactively (or read from WORKFLOWOS_NEW_PASSWORD for scripted setups).
 There is no sign-up page: the first admin is created here, and admins add everyone else in Settings.
@@ -51,11 +52,14 @@ def main(argv=None) -> int:
     sub.add_parser("list-users", help="list users")
 
     database = sub.add_parser("db", help="database schema migrations")
-    database.add_argument("action", choices=["upgrade", "current", "check"])
+    database.add_argument("action", choices=["upgrade", "current", "check", "import-sqlite"])
+    database.add_argument("path", nargs="?", help="SQLite file to import (import-sqlite only)")
 
     args = parser.parse_args(argv)
     if args.command == "db":
-        return _db(args.action)
+        if args.action == "import-sqlite" and not args.path:
+            parser.error("import-sqlite needs the path of the SQLite file")
+        return _db(args.action, args.path)
 
     # User commands work on a brand-new database too.
     from app.migrate import upgrade
@@ -85,8 +89,17 @@ def main(argv=None) -> int:
     return 0
 
 
-def _db(action: str) -> int:
+def _db(action: str, path: str = None) -> int:
     from app.migrate import current_revision, head_revision, pending_changes, upgrade
+
+    if action == "import-sqlite":
+        from app.db_import import ImportErrorReport, import_sqlite, summary
+
+        try:
+            print(summary(import_sqlite(path)))
+        except ImportErrorReport as e:
+            raise SystemExit(f"Import failed: {e}")
+        return 0
 
     if action == "upgrade":
         print(f"Database is at revision {upgrade()} (latest: {head_revision()}).")

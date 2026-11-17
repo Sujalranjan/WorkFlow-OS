@@ -52,7 +52,9 @@ docs/               Architecture and development notes
 docker compose up --build
 ```
 
-This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). Data is kept in the `workflowos-data` volume.
+This starts Postgres, the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). WorkFlowOS data is stored in Postgres (`workflowos-pg` volume). The `workflowos-data` volume holds the credential encryption key, the execution sandbox and the Demo CRM.
+
+- Set `POSTGRES_PASSWORD` in `.env` before the first start. Postgres is not exposed outside Docker; the default password is only acceptable on a single-user machine.
 
 - Create the first admin (there is no sign-up page; admins add everyone else in **Settings**):
   ```bash
@@ -62,6 +64,18 @@ This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost
 - Ports already in use? `API_PORT=8010 WEB_PORT=5180 CRM_PORT=8011 docker compose up --build`. The Gmail redirect URI follows `API_PORT` (`http://localhost:8010/api/integrations/gmail/callback`).
 - Other settings are read from `.env` if it exists (copy `.env.example`).
 - The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
+- **Upgrading an install that stored data in SQLite** (before Postgres was added): start the new version, then copy the old data in once:
+  ```bash
+  docker compose up -d --build
+  docker compose exec api python -m app.cli db import-sqlite /data/workflowos.db
+  ```
+  The import shows a per-table count and checks that every row arrived. It is safe to run again, and it never overwrites rows already in Postgres. Users, sign-ins and the Gmail/Slack connections carry over, because the encryption key in the data volume stays the same. The old SQLite file is not modified.
+- **Backups**: back up the database and the encryption key separately (without the key, saved integrations must be connected again):
+  ```bash
+  docker compose exec -T postgres pg_dump -U workflowos -Fc workflowos > workflowos-$(date +%F).dump
+  docker compose cp api:/data/workflowos.secret.key ./workflowos.secret.key
+  ```
+  Restore a dump with `docker compose exec -T postgres pg_restore -U workflowos -d workflowos --clean < workflowos-YYYY-MM-DD.dump`.
 - Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
 
 ## Run locally

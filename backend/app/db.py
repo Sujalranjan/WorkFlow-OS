@@ -266,9 +266,17 @@ def _new_engine(url: str) -> Engine:
     return create_engine(url, **options)
 
 
+def sqlite_file_engine(path: str) -> Engine:
+    """Engine for a specific SQLite file, never redirected by test hooks (e.g. an import source)."""
+    return engine_for_url("sqlite:///" + os.path.abspath(path).replace("\\", "/"), create_tables=False)
+
+
 def get_engine(target: Optional[str] = None, create_tables: Optional[bool] = None) -> Engine:
     """Engine for `target` (cached per URL). Creates missing tables only if asked (tests)."""
-    url = database_url(target)
+    return engine_for_url(database_url(target), create_tables)
+
+
+def engine_for_url(url: str, create_tables: Optional[bool] = None) -> Engine:
     create = AUTO_CREATE_TABLES if create_tables is None else create_tables
     with _lock:
         engine = _engines.get(url)
