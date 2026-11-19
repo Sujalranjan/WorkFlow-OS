@@ -102,9 +102,14 @@ mergeable on its own.
   Postgres engines now have a 10 s connect timeout, so an unreachable database fails fast instead
   of hanging.
 
-### 2e: Event-loop safety
-- Turn blocking `async def` endpoints into plain `def` (FastAPI runs them in a thread pool), or
-  enqueue them (verify). Add a test that no `async def` route calls a known-blocking client.
+### 2e: Event-loop safety (done)
+- The 11 `async def` endpoints in `api/execution.py` that did blocking database reads are now
+  plain `def`, so FastAPI runs them in its thread pool. Verify, the one that called Slack and the CRM,
+  had already moved to the worker in 2d.
+- The CRM form handler (`crm_ui.customer_update`) must stay `async` to read the body; its database
+  write now runs in the thread pool.
+- `tests/backend/test_event_loop.py`: no WorkFlowOS endpoint may be `async` unless allow-listed, and
+  three requests that each wait 1s must finish together (the old code took 3.0s, one after another).
 
 ### 2f: CI and docs
 - CI: Postgres service; migrations applied from empty; suite on both databases; Docker job starts

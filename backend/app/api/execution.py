@@ -81,7 +81,7 @@ simulator = DryRunSimulator()
     status_code=status.HTTP_201_CREATED,
     summary="Create an execution plan for an approved canonical workflow specification",
 )
-async def create_execution_plan(
+def create_execution_plan(
     workflow_id: str,
     request: Optional[CreateExecutionPlanRequest] = None,
 ) -> ExecutionPlan:
@@ -122,7 +122,7 @@ async def create_execution_plan(
     response_model=ExecutionPlanListResponse,
     summary="List all execution plans",
 )
-async def list_execution_plans(
+def list_execution_plans(
     workflow_id: Optional[str] = None,
     limit: int = 100,
 ) -> ExecutionPlanListResponse:
@@ -140,7 +140,7 @@ async def list_execution_plans(
     response_model=ExecutionPlan,
     summary="Retrieve an execution plan by ID",
 )
-async def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
+def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
     """Retrieves an execution plan by its unique ID."""
     plan = plan_repo.get_by_id(execution_plan_id)
     if not plan:
@@ -156,7 +156,7 @@ async def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
     response_model=DryRunResult,
     summary="Execute dry-run simulation of an execution plan without real actions",
 )
-async def run_dry_run(execution_plan_id: str) -> DryRunResult:
+def run_dry_run(execution_plan_id: str) -> DryRunResult:
     """Runs a deterministic dry-run / shadow simulation of the execution plan.
 
     Guarantees that ZERO real desktop, OS, or external actions are performed.
@@ -234,7 +234,7 @@ def execute_plan(
     response_model=ExecutionListResponse,
     summary="List all workflow execution records",
 )
-async def list_executions(
+def list_executions(
     workflow_id: Optional[str] = None,
     limit: int = 50,
 ) -> ExecutionListResponse:
@@ -248,7 +248,7 @@ async def list_executions(
     response_model=ExecutionAuditRecord,
     summary="Retrieve an execution audit record by ID",
 )
-async def get_execution(execution_id: str) -> ExecutionAuditRecord:
+def get_execution(execution_id: str) -> ExecutionAuditRecord:
     """Retrieves a specific execution record."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -264,7 +264,7 @@ async def get_execution(execution_id: str) -> ExecutionAuditRecord:
     response_model=ExecutionAuditRecord,
     summary="Cancel an active or pending workflow execution",
 )
-async def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
+def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
     """Cancels an execution record if it is running or pending."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -287,7 +287,7 @@ async def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
     response_model=ExecutionStrategyResponse,
     summary="Retrieve strategy selection breakdown for an execution run",
 )
-async def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse:
+def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse:
     """Retrieves deterministic strategy selection details for each step in an execution."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -325,7 +325,7 @@ async def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse
     response_model=PlanStrategyResponse,
     summary="Retrieve strategy selection breakdown for an execution plan",
 )
-async def get_plan_strategy(execution_plan_id: str) -> PlanStrategyResponse:
+def get_plan_strategy(execution_plan_id: str) -> PlanStrategyResponse:
     """Retrieves deterministic strategy selection details for each step in an execution plan."""
     plan = plan_repo.get_by_id(execution_plan_id)
     if not plan:
@@ -404,7 +404,7 @@ def verify_execution(
     response_model=VerificationResult,
     summary="Retrieve latest verification result for an execution run",
 )
-async def get_latest_verification(execution_id: str) -> VerificationResult:
+def get_latest_verification(execution_id: str) -> VerificationResult:
     """Retrieves the latest verification result for an execution run."""
     result = verif_repo.get_latest_by_execution_id(execution_id)
     if not result:
@@ -420,7 +420,7 @@ async def get_latest_verification(execution_id: str) -> VerificationResult:
     response_model=VerificationResult,
     summary="Retrieve a specific verification run by ID",
 )
-async def get_verification(verification_run_id: str) -> VerificationResult:
+def get_verification(verification_run_id: str) -> VerificationResult:
     """Retrieves a specific verification result by its run ID."""
     result = verif_repo.get_by_id(verification_run_id)
     if not result:
