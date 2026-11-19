@@ -12,7 +12,7 @@ import re
 from fastapi.testclient import TestClient
 import pytest
 
-from app import security
+from app import db, security
 from app.main import create_app
 from app.models.auth import CreateUserRequest, Role, UpdateUserRequest
 from app.repositories.auth_repository import AuthRepository
@@ -125,9 +125,9 @@ def test_logout_and_expiry_end_the_session(app, auth):
     assert client.get("/api/auth/me").status_code == 401
 
     client = client_for(app, Role.VIEWER)
-    with auth.repo._conn() as conn, conn:
+    with auth.repo.begin() as conn:
         past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
-        conn.execute("UPDATE sessions SET expires_at = ?", (past,))
+        conn.execute(db.sessions.update().values(expires_at=past))
     assert client.get("/api/auth/me").status_code == 401
 
 

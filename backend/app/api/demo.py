@@ -538,7 +538,7 @@ def seed_demo_activity(
     summary="Safely reset application demonstration state",
 )
 def reset_demo_state(service: EventService = Depends(get_event_service)) -> ResetDemoResponse:
-    """Safely clears all demo-generated SQLite entities and caches.
+    """Safely clears all demo-generated entities and caches.
 
     STRICT GUARANTEES:
     - Only deletes demonstration data: activity_events, canonical_workflows,
@@ -548,43 +548,12 @@ def reset_demo_state(service: EventService = Depends(get_event_service)) -> Rese
     """
     db_path = getattr(service.repository, "db_path", None)
 
-    event_repo = EventRepository(db_path=db_path) if db_path else EventRepository()
-    with event_repo._get_connection() as conn:
-        with conn:
-            cur = conn.execute("DELETE FROM activity_events")
-            events_deleted = cur.rowcount
-
-    canonical_repo = CanonicalWorkflowRepository(db_path=db_path) if db_path else CanonicalWorkflowRepository()
-    with canonical_repo._get_connection() as conn:
-        with conn:
-            cur = conn.execute("DELETE FROM canonical_workflows")
-            specs_deleted = cur.rowcount
-
-    plan_repo = ExecutionPlanRepository(db_path=db_path) if db_path else ExecutionPlanRepository()
-    with plan_repo._get_connection() as conn:
-        with conn:
-            cur = conn.execute("DELETE FROM execution_plans")
-            plans_deleted = cur.rowcount
-
-    exec_repo = ExecutionRepository(db_path=db_path) if db_path else ExecutionRepository()
-    with exec_repo._get_connection() as conn:
-        with conn:
-            cur = conn.execute("DELETE FROM execution_records")
-            executions_deleted = cur.rowcount
-
-    ver_repo = VerificationRepository(db_path=db_path) if db_path else VerificationRepository()
-    with ver_repo._get_connection() as conn:
-        with conn:
-            conn.execute("DELETE FROM verification_checks")
-            cur = conn.execute("DELETE FROM workflow_verifications")
-            verifications_deleted = cur.rowcount
-
-    lrn_repo = LearningRepository(db_path=db_path) if db_path else LearningRepository()
-    with lrn_repo._get_connection() as conn:
-        with conn:
-            conn.execute("DELETE FROM workflow_learning_events")
-            cur = conn.execute("DELETE FROM workflow_reliability_profiles")
-            profiles_deleted = cur.rowcount
+    events_deleted = EventRepository(db_path).delete_all()
+    specs_deleted = CanonicalWorkflowRepository(db_path).delete_all()
+    plans_deleted = ExecutionPlanRepository(db_path).delete_all()
+    executions_deleted = ExecutionRepository(db_path).delete_all()
+    verifications_deleted = VerificationRepository(db_path).delete_all()
+    profiles_deleted = LearningRepository(db_path).delete_all()
 
     # Invalidate in-memory interpretations cache
     if semantic_module._semantic_engine is not None:

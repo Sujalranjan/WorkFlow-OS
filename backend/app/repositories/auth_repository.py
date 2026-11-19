@@ -1,17 +1,16 @@
-"""SQLite persistence for users, sessions and API keys.
+"""Persistence for users, sessions and API keys.
 
 Session tokens and API keys are stored only as SHA-256 hashes, so a copy of the database cannot be
 used to sign in or send events. Password hashes are Argon2 and never leave this module except for
-verification.
+verification. Emails are matched case-insensitively.
 """
 
-from contextlib import contextmanager
 from datetime import datetime, timezone
-import json
-import sqlite3
-from typing import Generator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from app.config import DATABASE_PATH
+from sqlalchemy import delete, func, insert, select, update
+
+from app.db import Repository, api_keys, sessions, users
 from app.models.auth import ApiKey, User
 
 
@@ -19,161 +18,104 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class AuthRepository:
-    def __init__(self, db_path: str = DATABASE_PATH) -> None:
-        self.db_path = db_path
-        self._memory_conn: Optional[sqlite3.Connection] = None
-        if db_path == ":memory:":
-            self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            self._memory_conn.row_factory = sqlite3.Row
-        self._init_db()
-
-    @contextmanager
-    def _conn(self) -> Generator[sqlite3.Connection, None, None]:
-        if self._memory_conn is not None:
-            yield self._memory_conn
-            return
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._conn() as conn, conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    password_hash TEXT NOT NULL,
-                    record_json TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token_hash TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS api_keys (
-                    key_id TEXT PRIMARY KEY,
-                    key_hash TEXT NOT NULL UNIQUE,
-                    record_json TEXT NOT NULL
-                )
-                """
-            )
-
+class AuthRepository(Repository):
     # ------------------------------------------------------------------ users
 
     def count_users(self) -> int:
-        with self._conn() as conn:
-            return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        with self.connect() as conn:
+            return conn.execute(select(func.count()).select_from(users)).scalar_one()
 
     def insert_user(self, user: User, password_hash: str) -> User:
-        with self._conn() as conn, conn:
+        with self.begin() as conn:
             conn.execute(
-                "INSERT INTO users (user_id, email, password_hash, record_json) VALUES (?, ?, ?, ?)",
-                (user.user_id, user.email, password_hash, user.model_dump_json()),
+                insert(users).values(
+                    user_id=user.user_id,
+                    email=user.email,
+                    password_hash=password_hash,
+                    record_json=user.model_dump(mode="json"),
+                )
             )
         return user
 
     def save_user(self, user: User, password_hash: Optional[str] = None) -> User:
-        with self._conn() as conn, conn:
-            if password_hash:
-                conn.execute(
-                    "UPDATE users SET email = ?, record_json = ?, password_hash = ? WHERE user_id = ?",
-                    (user.email, user.model_dump_json(), password_hash, user.user_id),
-                )
-            else:
-                conn.execute(
-                    "UPDATE users SET email = ?, record_json = ? WHERE user_id = ?",
-                    (user.email, user.model_dump_json(), user.user_id),
-                )
+        values = {"email": user.email, "record_json": user.model_dump(mode="json")}
+        if password_hash:
+            values["password_hash"] = password_hash
+        with self.begin() as conn:
+            conn.execute(update(users).where(users.c.user_id == user.user_id).values(**values))
         return user
 
     def get_user(self, user_id: str) -> Optional[User]:
-        with self._conn() as conn:
-            row = conn.execute("SELECT record_json FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        return User(**json.loads(row["record_json"])) if row else None
+        with self.connect() as conn:
+            data = conn.execute(select(users.c.record_json).where(users.c.user_id == user_id)).scalar()
+        return User(**data) if data else None
 
     def get_user_with_hash(self, email: str) -> Optional[Tuple[User, str]]:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT record_json, password_hash FROM users WHERE email = ? COLLATE NOCASE", (email,)
-            ).fetchone()
-        return (User(**json.loads(row["record_json"])), row["password_hash"]) if row else None
+        stmt = select(users.c.record_json, users.c.password_hash).where(func.lower(users.c.email) == email.lower())
+        with self.connect() as conn:
+            row = conn.execute(stmt).first()
+        return (User(**row.record_json), row.password_hash) if row else None
 
     def list_users(self) -> List[User]:
-        with self._conn() as conn:
-            rows = conn.execute("SELECT record_json FROM users ORDER BY email").fetchall()
-        return [User(**json.loads(r["record_json"])) for r in rows]
+        with self.connect() as conn:
+            return [User(**data) for data in conn.execute(select(users.c.record_json).order_by(users.c.email)).scalars()]
 
     # --------------------------------------------------------------- sessions
 
     def insert_session(self, token_hash: str, user_id: str, expires_at: str) -> None:
-        with self._conn() as conn, conn:
+        with self.begin() as conn:
             conn.execute(
-                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (token_hash, user_id, _now(), expires_at),
+                insert(sessions).values(token_hash=token_hash, user_id=user_id, created_at=_now(), expires_at=expires_at)
             )
 
     def get_session(self, token_hash: str) -> Optional[Tuple[str, str]]:
         """Returns (user_id, expires_at)."""
-        with self._conn() as conn:
+        with self.connect() as conn:
             row = conn.execute(
-                "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", (token_hash,)
-            ).fetchone()
-        return (row["user_id"], row["expires_at"]) if row else None
+                select(sessions.c.user_id, sessions.c.expires_at).where(sessions.c.token_hash == token_hash)
+            ).first()
+        return (row.user_id, row.expires_at) if row else None
 
     def delete_session(self, token_hash: str) -> None:
-        with self._conn() as conn, conn:
-            conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+        with self.begin() as conn:
+            conn.execute(delete(sessions).where(sessions.c.token_hash == token_hash))
 
     def delete_user_sessions(self, user_id: str) -> None:
-        with self._conn() as conn, conn:
-            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        with self.begin() as conn:
+            conn.execute(delete(sessions).where(sessions.c.user_id == user_id))
 
     def delete_expired_sessions(self) -> None:
-        with self._conn() as conn, conn:
-            conn.execute("DELETE FROM sessions WHERE expires_at < ?", (_now(),))
+        with self.begin() as conn:
+            conn.execute(delete(sessions).where(sessions.c.expires_at < _now()))
 
     # --------------------------------------------------------------- api keys
 
     def insert_api_key(self, key: ApiKey, key_hash: str) -> ApiKey:
-        with self._conn() as conn, conn:
+        with self.begin() as conn:
             conn.execute(
-                "INSERT INTO api_keys (key_id, key_hash, record_json) VALUES (?, ?, ?)",
-                (key.key_id, key_hash, key.model_dump_json()),
+                insert(api_keys).values(key_id=key.key_id, key_hash=key_hash, record_json=key.model_dump(mode="json"))
             )
         return key
 
+    def _key(self, condition) -> Optional[ApiKey]:
+        with self.connect() as conn:
+            data = conn.execute(select(api_keys.c.record_json).where(condition)).scalar()
+        return ApiKey(**data) if data else None
+
     def get_api_key_by_hash(self, key_hash: str) -> Optional[ApiKey]:
-        with self._conn() as conn:
-            row = conn.execute("SELECT record_json FROM api_keys WHERE key_hash = ?", (key_hash,)).fetchone()
-        return ApiKey(**json.loads(row["record_json"])) if row else None
+        return self._key(api_keys.c.key_hash == key_hash)
 
     def get_api_key(self, key_id: str) -> Optional[ApiKey]:
-        with self._conn() as conn:
-            row = conn.execute("SELECT record_json FROM api_keys WHERE key_id = ?", (key_id,)).fetchone()
-        return ApiKey(**json.loads(row["record_json"])) if row else None
+        return self._key(api_keys.c.key_id == key_id)
 
     def save_api_key(self, key: ApiKey) -> ApiKey:
-        with self._conn() as conn, conn:
-            conn.execute("UPDATE api_keys SET record_json = ? WHERE key_id = ?", (key.model_dump_json(), key.key_id))
+        with self.begin() as conn:
+            conn.execute(
+                update(api_keys).where(api_keys.c.key_id == key.key_id).values(record_json=key.model_dump(mode="json"))
+            )
         return key
 
     def list_api_keys(self) -> List[ApiKey]:
-        with self._conn() as conn:
-            rows = conn.execute("SELECT record_json FROM api_keys").fetchall()
-        keys = [ApiKey(**json.loads(r["record_json"])) for r in rows]
+        with self.connect() as conn:
+            keys = [ApiKey(**data) for data in conn.execute(select(api_keys.c.record_json)).scalars()]
         return sorted(keys, key=lambda k: k.created_at, reverse=True)

@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 import json
-import sqlite3
 from urllib.parse import parse_qs, urlparse
 
 from cryptography.fernet import Fernet
@@ -10,7 +9,7 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from app import config, security
+from app import config, db, security
 from app.main import create_app
 from app.services import integrations as integrations_module
 from app.services.credential_store import (
@@ -92,10 +91,10 @@ def service(store, google, monkeypatch):
 
 def test_secrets_are_encrypted_at_rest(store):
     store.put(SLACK, {"bot_token": "xoxb-super-secret"}, {"channel_id": "C123"}, "admin@example.com")
-    with sqlite3.connect(store.db_path) as conn:
-        raw = conn.execute("SELECT ciphertext, metadata_json FROM integration_credentials").fetchone()
-    assert b"xoxb-super-secret" not in raw[0]
-    assert "xoxb" not in raw[1]
+    with store.connect() as conn:
+        raw = conn.execute(db.integration_credentials.select()).first()
+    assert b"xoxb-super-secret" not in bytes(raw.ciphertext)
+    assert "xoxb" not in json.dumps(raw.metadata_json)
 
     got = store.get(SLACK)
     assert got.secret == {"bot_token": "xoxb-super-secret"}
@@ -132,9 +131,9 @@ def test_oauth_state_is_single_use_and_expires(store):
     assert store.pop_oauth_state("") is None
 
     store.save_oauth_state("s2", {"verifier": "v"})
-    with sqlite3.connect(store.db_path) as conn:
+    with store.begin() as conn:
         past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
-        conn.execute("UPDATE oauth_states SET expires_at = ?", (past,))
+        conn.execute(db.oauth_states.update().values(expires_at=past))
     assert store.pop_oauth_state("s2") is None
 
 

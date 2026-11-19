@@ -191,15 +191,21 @@ def executed_plan_in_db():
     return audit
 
 
+def _verify(api_client, exec_id):
+    """Queue verification (runs inline in tests) and return the stored result."""
+    resp = api_client.post(f"/api/workflows/executions/{exec_id}/verify", json={"force_recheck": True})
+    assert resp.status_code == 202
+    job = resp.json()
+    assert job["kind"] == "verify_execution" and job["status"] == "succeeded", job
+    result = api_client.get(f"/api/workflows/verifications/{job['result']['verification_run_id']}")
+    assert result.status_code == 200
+    return result.json()
+
+
 def test_api_verify_execution_success(api_client, executed_plan_in_db):
     """POST /api/workflows/executions/{execution_id}/verify triggers verification."""
     exec_id = executed_plan_in_db.execution_id
-    resp = api_client.post(
-        f"/api/workflows/executions/{exec_id}/verify",
-        json={"force_recheck": True},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
+    data = _verify(api_client, exec_id)
 
     assert "verification_run_id" in data
     assert data["execution_id"] == exec_id
@@ -220,12 +226,7 @@ def test_api_get_execution_verification(api_client, executed_plan_in_db):
     exec_id = executed_plan_in_db.execution_id
 
     # Verify first
-    post_resp = api_client.post(
-        f"/api/workflows/executions/{exec_id}/verify",
-        json={"force_recheck": True},
-    )
-    assert post_resp.status_code == 200
-    vrun_id = post_resp.json()["verification_run_id"]
+    vrun_id = _verify(api_client, exec_id)["verification_run_id"]
 
     # Retrieve by execution ID
     get_resp = api_client.get(f"/api/workflows/executions/{exec_id}/verification")
@@ -239,12 +240,7 @@ def test_api_get_verification_by_run_id(api_client, executed_plan_in_db):
     """GET /api/workflows/verifications/{verification_run_id} retrieves verification run."""
     exec_id = executed_plan_in_db.execution_id
 
-    post_resp = api_client.post(
-        f"/api/workflows/executions/{exec_id}/verify",
-        json={"force_recheck": True},
-    )
-    assert post_resp.status_code == 200
-    vrun_id = post_resp.json()["verification_run_id"]
+    vrun_id = _verify(api_client, exec_id)["verification_run_id"]
 
     get_resp = api_client.get(f"/api/workflows/verifications/{vrun_id}")
     assert get_resp.status_code == 200

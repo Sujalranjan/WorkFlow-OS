@@ -11,20 +11,20 @@ who connected it) that status pages can show without decrypting anything.
 Also stores short-lived OAuth sign-in states (single use, encrypted, 10 minute lifetime).
 """
 
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
 import os
-import sqlite3
 import threading
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import delete, insert, select, update
 
 from app import config
+from app.db import Repository, get_engine, integration_credentials, oauth_states, upsert
 
 logger = logging.getLogger(__name__)
 
@@ -86,120 +86,100 @@ class StoredCredential:
     updated_by: Optional[str] = None
 
 
-class CredentialStore:
+class CredentialStore(Repository):
     def __init__(self, db_path: Optional[str] = None, key: Optional[bytes] = None) -> None:
-        self.db_path = db_path or config.DATABASE_PATH
+        super().__init__(db_path)
         self._fernet = Fernet(key or load_or_create_key())
-        self._init_db()
-
-    @contextmanager
-    def _conn(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    def _init_db(self) -> None:
-        with self._conn() as conn, conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS integration_credentials (
-                    name TEXT PRIMARY KEY,
-                    ciphertext BLOB NOT NULL,
-                    metadata_json TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    updated_by TEXT
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS oauth_states (
-                    state_hash TEXT PRIMARY KEY,
-                    ciphertext BLOB NOT NULL,
-                    expires_at TEXT NOT NULL
-                )
-                """
-            )
 
     def _encrypt(self, data: Dict[str, Any]) -> bytes:
         return self._fernet.encrypt(json.dumps(data).encode("utf-8"))
 
     def _decrypt(self, blob: bytes) -> Dict[str, Any]:
-        return json.loads(self._fernet.decrypt(blob).decode("utf-8"))
+        return json.loads(self._fernet.decrypt(bytes(blob)).decode("utf-8"))
 
     # ------------------------------------------------------------- credentials
 
     def put(self, name: str, secret: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None, actor: Optional[str] = None) -> None:
-        with self._conn() as conn, conn:
-            conn.execute(
-                """
-                INSERT INTO integration_credentials (name, ciphertext, metadata_json, updated_at, updated_by)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET ciphertext = excluded.ciphertext,
-                    metadata_json = excluded.metadata_json, updated_at = excluded.updated_at,
-                    updated_by = excluded.updated_by
-                """,
-                (name, self._encrypt(secret), json.dumps(metadata or {}), _now().isoformat(), actor),
+        with self.begin() as conn:
+            upsert(
+                conn,
+                integration_credentials,
+                {
+                    "name": name,
+                    "ciphertext": self._encrypt(secret),
+                    "metadata_json": metadata or {},
+                    "updated_at": _now().isoformat(),
+                    "updated_by": actor,
+                },
+                key=["name"],
             )
 
     def update_secret(self, name: str, secret: Dict[str, Any]) -> None:
         """Replace only the secret (e.g. a refreshed access token), keeping metadata and audit fields."""
-        with self._conn() as conn, conn:
-            conn.execute("UPDATE integration_credentials SET ciphertext = ? WHERE name = ?", (self._encrypt(secret), name))
+        with self.begin() as conn:
+            conn.execute(
+                update(integration_credentials)
+                .where(integration_credentials.c.name == name)
+                .values(ciphertext=self._encrypt(secret))
+            )
 
     def get(self, name: str) -> Optional[StoredCredential]:
         """The decrypted record, or None if absent or unreadable with the current key."""
-        with self._conn() as conn:
-            row = conn.execute("SELECT * FROM integration_credentials WHERE name = ?", (name,)).fetchone()
+        with self.connect() as conn:
+            row = conn.execute(select(integration_credentials).where(integration_credentials.c.name == name)).first()
         if not row:
             return None
         try:
-            secret = self._decrypt(row["ciphertext"])
+            secret = self._decrypt(row.ciphertext)
         except InvalidToken:
             logger.error("Stored credential cannot be decrypted with the current key", extra={"credential": name})
             return None
-        return StoredCredential(name, secret, json.loads(row["metadata_json"]), row["updated_at"], row["updated_by"])
+        return StoredCredential(name, secret, row.metadata_json, row.updated_at, row.updated_by)
 
     def info(self, name: str) -> Optional[StoredCredential]:
         """Metadata and audit fields only; the secret is left empty and never decrypted."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT metadata_json, updated_at, updated_by FROM integration_credentials WHERE name = ?", (name,)
-            ).fetchone()
+        t = integration_credentials
+        with self.connect() as conn:
+            row = conn.execute(select(t.c.metadata_json, t.c.updated_at, t.c.updated_by).where(t.c.name == name)).first()
         if not row:
             return None
-        return StoredCredential(name, {}, json.loads(row["metadata_json"]), row["updated_at"], row["updated_by"])
+        return StoredCredential(name, {}, row.metadata_json, row.updated_at, row.updated_by)
 
     def delete(self, name: str) -> bool:
-        with self._conn() as conn, conn:
-            return conn.execute("DELETE FROM integration_credentials WHERE name = ?", (name,)).rowcount > 0
+        with self.begin() as conn:
+            return conn.execute(delete(integration_credentials).where(integration_credentials.c.name == name)).rowcount > 0
 
     # ------------------------------------------------------------ oauth states
 
     def save_oauth_state(self, state: str, data: Dict[str, Any]) -> None:
-        with self._conn() as conn, conn:
-            conn.execute("DELETE FROM oauth_states WHERE expires_at < ?", (_now().isoformat(),))
+        with self.begin() as conn:
+            conn.execute(delete(oauth_states).where(oauth_states.c.expires_at < _now().isoformat()))
             conn.execute(
-                "INSERT INTO oauth_states (state_hash, ciphertext, expires_at) VALUES (?, ?, ?)",
-                (_sha256(state), self._encrypt(data), (_now() + OAUTH_STATE_TTL).isoformat()),
+                insert(oauth_states).values(
+                    state_hash=_sha256(state),
+                    ciphertext=self._encrypt(data),
+                    expires_at=(_now() + OAUTH_STATE_TTL).isoformat(),
+                )
             )
 
     def pop_oauth_state(self, state: str) -> Optional[Dict[str, Any]]:
-        """Consume a sign-in state: returns its data once, or None if unknown, used or expired."""
+        """Consume a sign-in state: returns its data once, or None if unknown, used or expired.
+
+        DELETE ... RETURNING makes "read and remove" one atomic step, so two concurrent callbacks
+        cannot both use the same state.
+        """
         if not state:
             return None
-        with self._conn() as conn, conn:
+        with self.begin() as conn:
             row = conn.execute(
-                "SELECT ciphertext, expires_at FROM oauth_states WHERE state_hash = ?", (_sha256(state),)
-            ).fetchone()
-            conn.execute("DELETE FROM oauth_states WHERE state_hash = ?", (_sha256(state),))
-        if not row or datetime.fromisoformat(row["expires_at"]) < _now():
+                delete(oauth_states)
+                .where(oauth_states.c.state_hash == _sha256(state))
+                .returning(oauth_states.c.ciphertext, oauth_states.c.expires_at)
+            ).first()
+        if not row or datetime.fromisoformat(row.expires_at) < _now():
             return None
         try:
-            return self._decrypt(row["ciphertext"])
+            return self._decrypt(row.ciphertext)
         except InvalidToken:
             return None
 
@@ -215,7 +195,7 @@ def get_credential_store() -> CredentialStore:
     with _store_lock:
         if _override is not None:
             return _override
-        if _store is None or _store.db_path != config.DATABASE_PATH:
+        if _store is None or _store.engine.url != get_engine().url:
             _store = CredentialStore()
         return _store
 

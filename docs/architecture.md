@@ -42,7 +42,9 @@ flowchart LR
 | Intervention | engine + `crm_executor.py` | When a step cannot decide safely (no CRM customer, or several), it returns `NEEDS_INPUT`. The run pauses with its state saved and continues from that step once a person answers. Approval and policy are re-checked first. |
 | Verification | `verification_engine.py`, `verifiers/` | After a run, re-reads each system independently: file size and SHA-256 for downloads, a fresh CRM `GET` for updates, Slack `conversations.history` for messages. *Executed* and *verified* are reported separately. |
 | Learning | `learning_engine.py` | Reliability per workflow and step from execution and verification history, failure classification and suggestions. Advisory only: it never edits workflows or approvals. |
-| Automation | `trigger_service.py`, `trigger_scheduler.py` | Email triggers poll Gmail on an interval (`(<query>) after:<created>`). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
+| Automation | `trigger_service.py` | Email triggers poll Gmail on an interval (`(<query>) after:<created>`). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
+| Jobs and worker | `job_queue.py`, `jobs.py`, `worker.py` | Runs, verification, approved email runs and email polling are queued as jobs and done by a worker process, never inside a web request. Postgres hands each job to exactly one worker (`FOR UPDATE SKIP LOCKED`). Workers hold a renewable lease and stop cleanly on SIGTERM. A job that may have changed an external system is never retried: if it fails or its worker dies, it is marked *needs attention* for a person. |
+| Database | `db.py`, `migrations/`, `migrate.py`, `db_import.py` | SQLAlchemy Core tables for SQLite or Postgres (`DATABASE_URL`). Alembic migrations are applied on start-up (with an advisory lock on Postgres). `db import-sqlite` moves an existing SQLite install into Postgres. |
 | API and UI | `backend/app/api/`, `frontend/src/` | FastAPI (OpenAPI at `/docs`); React + TypeScript dashboard: Overview, Activity, Workflows, Inbox, Automations, Runs. |
 
 ## Integrations
@@ -68,7 +70,8 @@ flowchart LR
 - **Dry run** simulates every step with zero external calls.
 - **Fail closed**: missing credentials, unresolved parameters, policy blocks and executor errors stop the run with a reason.
 - **No silent guesses**: ambiguous lookups pause for a person instead of picking a record.
-- **Secrets** never appear in API responses, audit records, logs or LLM prompts; tests assert this.
+- **Secrets** never appear in API responses, audit records, logs or LLM prompts; tests assert this. Gmail and Slack credentials are stored encrypted (Fernet) in the database.
+- **No replays**: work that may already have changed the CRM, Slack or files is never repeated automatically, even after a crash.
 
 ## Observability
 
@@ -76,11 +79,10 @@ Logs are structured (JSON in Docker). Each API request carries an id from `X-Req
 
 ## Storage
 
-SQLite: one database for WorkFlowOS (events, workflows, plans, executions, verifications, reliability, triggers and runs) and one for the Demo CRM. Records are stored as validated JSON next to indexed columns.
+Postgres in Docker, SQLite for local development and as the default (`DATABASE_PATH`). One database holds all WorkFlowOS data: events, workflows, plans, executions, verifications, reliability, triggers and runs, users and API keys, encrypted credentials, and jobs. The Demo CRM keeps its own SQLite file. Records are validated JSON documents (`JSONB` on Postgres) next to the indexed columns used for filtering. The schema is versioned with Alembic: change the tables in `db.py`, then generate a migration. The test suite runs on both databases in CI.
 
 ## Current limits
 
-- Connection secrets (Gmail token, Slack token) are still read from files and environment variables rather than an encrypted store.
 - Interpretations are cached in memory, so after a restart a routine is re-interpreted before a new workflow is created from it (existing workflows are unaffected).
 - Only catalog actions execute; other observed activity is kept as context. Browser, accessibility and UI-automation strategies are modelled but have no executor.
 - Gmail is polled, not pushed.

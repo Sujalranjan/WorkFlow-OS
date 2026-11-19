@@ -147,11 +147,13 @@ def test_api_execute_plan_and_audit_endpoints(api_client, approved_spec_in_db):
         f"/api/workflows/execution-plans/{plan_id}/execute",
         json={"idempotency_key": unique_key},
     )
-    assert exec_resp.status_code == 200
-    exec_data = exec_resp.json()
-    assert "execution_id" in exec_data
-    execution_id = exec_data["execution_id"]
-    assert exec_data["execution_plan_id"] == plan_id
+    assert exec_resp.status_code == 202
+    job = exec_resp.json()
+    assert job["kind"] == "execute_plan" and job["status"] == "succeeded"
+    assert job["max_attempts"] == 1  # live runs are never retried
+    execution_id = job["result"]["execution_id"]
+    assert api_client.get(f"/api/jobs/{job['job_id']}").json()["status"] == "succeeded"
+    assert api_client.get(f"/api/workflows/executions/{execution_id}").json()["execution_plan_id"] == plan_id
 
     # 3. List executions
     list_resp = api_client.get("/api/workflows/executions")

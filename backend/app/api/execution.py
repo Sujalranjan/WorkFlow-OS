@@ -61,6 +61,8 @@ from app.security import current_actor
 from app.services.execution_engine import ExecutionEngine
 from app.services.execution_planner import ExecutionPlanner
 from app.services.verification_engine import VerificationEngine
+from app.models.jobs import Job
+from app.services.jobs import submit as submit_job
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ simulator = DryRunSimulator()
     status_code=status.HTTP_201_CREATED,
     summary="Create an execution plan for an approved canonical workflow specification",
 )
-async def create_execution_plan(
+def create_execution_plan(
     workflow_id: str,
     request: Optional[CreateExecutionPlanRequest] = None,
 ) -> ExecutionPlan:
@@ -120,7 +122,7 @@ async def create_execution_plan(
     response_model=ExecutionPlanListResponse,
     summary="List all execution plans",
 )
-async def list_execution_plans(
+def list_execution_plans(
     workflow_id: Optional[str] = None,
     limit: int = 100,
 ) -> ExecutionPlanListResponse:
@@ -138,7 +140,7 @@ async def list_execution_plans(
     response_model=ExecutionPlan,
     summary="Retrieve an execution plan by ID",
 )
-async def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
+def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
     """Retrieves an execution plan by its unique ID."""
     plan = plan_repo.get_by_id(execution_plan_id)
     if not plan:
@@ -154,7 +156,7 @@ async def get_execution_plan(execution_plan_id: str) -> ExecutionPlan:
     response_model=DryRunResult,
     summary="Execute dry-run simulation of an execution plan without real actions",
 )
-async def run_dry_run(execution_plan_id: str) -> DryRunResult:
+def run_dry_run(execution_plan_id: str) -> DryRunResult:
     """Runs a deterministic dry-run / shadow simulation of the execution plan.
 
     Guarantees that ZERO real desktop, OS, or external actions are performed.
@@ -185,43 +187,46 @@ execution_engine = ExecutionEngine(
 
 @router.post(
     "/execution-plans/{execution_plan_id}/execute",
-    response_model=ExecutionAuditRecord,
-    status_code=status.HTTP_200_OK,
-    summary="Execute an approved execution plan through controlled local executor",
+    response_model=Job,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue an approved execution plan for the worker",
 )
 def execute_plan(
     execution_plan_id: str,
     request: Optional[ExecutePlanRequest] = None,
     actor: str = Depends(current_actor),
-) -> ExecutionAuditRecord:
-    """Executes an approved ExecutionPlan with strict backend security guardrails.
+) -> Job:
+    """Checks the plan can run (approved, allowed by policy) and queues it. Returns the job.
 
-    Requires source CanonicalWorkflowSpec to be in ApprovalState.APPROVED.
-    Rejects any unapproved workflows or unsupported external mutations.
+    The run happens in the worker; poll GET /api/jobs/{job_id}, whose result holds the execution_id.
+    The worker re-checks approval and policy before every step.
     """
-    idempotency_key = request.idempotency_key if request else None
-    execution_mode = request.execution_mode if request else ExecutionMode.LIVE
-    custom_sandbox = request.sandbox_dir if request else None
-
-    try:
-        record = execution_engine.execute_plan(
-            execution_plan_id=execution_plan_id,
-            idempotency_key=idempotency_key,
-            execution_mode=execution_mode,
-            custom_sandbox_dir=custom_sandbox,
-            executed_by=actor,
-        )
-        return record
-    except ValueError as e:
-        err_msg = str(e)
-        logger.warning(f"Execution validation rejected: {err_msg}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
-    except Exception as e:
-        logger.exception(f"Unexpected error executing plan: {e}")
+    plan = plan_repo.get_by_id(execution_plan_id)
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Execution plan '{execution_plan_id}' not found.")
+    spec = spec_repo.get_by_id(plan.source_workflow_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow '{plan.source_workflow_id}' not found.")
+    ok, violations = execution_engine.policy_engine.validate_plan_execution(spec, plan)
+    if not ok:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Execution error: {str(e)}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Execution rejected by security policy: {'; '.join(violations)}",
         )
+    execution_mode = request.execution_mode if request else ExecutionMode.LIVE
+    return submit_job(
+        "execute_plan",
+        {
+            "execution_plan_id": execution_plan_id,
+            "execution_mode": execution_mode.value,
+            "idempotency_key": request.idempotency_key if request else None,
+            "sandbox_dir": request.sandbox_dir if request else None,
+            "executed_by": actor,
+        },
+        created_by=actor,
+        # A live run may change external systems, so it is never retried automatically.
+        max_attempts=1 if execution_mode == ExecutionMode.LIVE else None,
+    )
 
 
 @router.get(
@@ -229,7 +234,7 @@ def execute_plan(
     response_model=ExecutionListResponse,
     summary="List all workflow execution records",
 )
-async def list_executions(
+def list_executions(
     workflow_id: Optional[str] = None,
     limit: int = 50,
 ) -> ExecutionListResponse:
@@ -243,7 +248,7 @@ async def list_executions(
     response_model=ExecutionAuditRecord,
     summary="Retrieve an execution audit record by ID",
 )
-async def get_execution(execution_id: str) -> ExecutionAuditRecord:
+def get_execution(execution_id: str) -> ExecutionAuditRecord:
     """Retrieves a specific execution record."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -259,7 +264,7 @@ async def get_execution(execution_id: str) -> ExecutionAuditRecord:
     response_model=ExecutionAuditRecord,
     summary="Cancel an active or pending workflow execution",
 )
-async def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
+def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
     """Cancels an execution record if it is running or pending."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -282,7 +287,7 @@ async def cancel_execution(execution_id: str) -> ExecutionAuditRecord:
     response_model=ExecutionStrategyResponse,
     summary="Retrieve strategy selection breakdown for an execution run",
 )
-async def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse:
+def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse:
     """Retrieves deterministic strategy selection details for each step in an execution."""
     record = exec_repo.get_by_id(execution_id)
     if not record:
@@ -320,7 +325,7 @@ async def get_execution_strategy(execution_id: str) -> ExecutionStrategyResponse
     response_model=PlanStrategyResponse,
     summary="Retrieve strategy selection breakdown for an execution plan",
 )
-async def get_plan_strategy(execution_plan_id: str) -> PlanStrategyResponse:
+def get_plan_strategy(execution_plan_id: str) -> PlanStrategyResponse:
     """Retrieves deterministic strategy selection details for each step in an execution plan."""
     plan = plan_repo.get_by_id(execution_plan_id)
     if not plan:
@@ -368,39 +373,30 @@ verification_engine = VerificationEngine(
 
 @router.post(
     "/executions/{execution_id}/verify",
-    response_model=VerificationResult,
-    status_code=status.HTTP_200_OK,
-    summary="Run deterministic post-execution verification on an execution run",
+    response_model=Job,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue independent verification of an execution run",
 )
-async def verify_execution(
+def verify_execution(
     execution_id: str,
     request: Optional[VerifyExecutionRequest] = None,
-) -> VerificationResult:
-    """Evaluates whether executed steps produced their expected state/result.
+    actor: str = Depends(current_actor),
+) -> Job:
+    """Queues verification (read-only checks against Gmail, files, CRM and Slack) for the worker.
 
-    Strictly distinguishes EXECUTOR SUCCESS from VERIFIED SUCCESS.
-    Guarantees zero external mutations.
+    Poll GET /api/jobs/{job_id}; the result is then at GET /executions/{execution_id}/verification.
     """
-    force_recheck = request.force_recheck if request else False
-    custom_expectations = request.custom_expectations if request else None
-
-    try:
-        result = verification_engine.verify_execution(
-            execution_id=execution_id,
-            force_recheck=force_recheck,
-            custom_expectations=custom_expectations,
-        )
-        return result
-    except ValueError as e:
-        err_msg = str(e)
-        logger.warning(f"Verification rejected: {err_msg}")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
-    except Exception as e:
-        logger.exception(f"Unexpected error running verification: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Verification error: {str(e)}",
-        )
+    if not exec_repo.get_by_id(execution_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Execution '{execution_id}' not found.")
+    return submit_job(
+        "verify_execution",
+        {
+            "execution_id": execution_id,
+            "force_recheck": request.force_recheck if request else False,
+            "custom_expectations": request.custom_expectations if request else None,
+        },
+        created_by=actor,
+    )
 
 
 @router.get(
@@ -408,7 +404,7 @@ async def verify_execution(
     response_model=VerificationResult,
     summary="Retrieve latest verification result for an execution run",
 )
-async def get_latest_verification(execution_id: str) -> VerificationResult:
+def get_latest_verification(execution_id: str) -> VerificationResult:
     """Retrieves the latest verification result for an execution run."""
     result = verif_repo.get_latest_by_execution_id(execution_id)
     if not result:
@@ -424,7 +420,7 @@ async def get_latest_verification(execution_id: str) -> VerificationResult:
     response_model=VerificationResult,
     summary="Retrieve a specific verification run by ID",
 )
-async def get_verification(verification_run_id: str) -> VerificationResult:
+def get_verification(verification_run_id: str) -> VerificationResult:
     """Retrieves a specific verification result by its run ID."""
     result = verif_repo.get_by_id(verification_run_id)
     if not result:

@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.repositories.crm_repository import CrmRepository
 
@@ -126,6 +127,7 @@ async def customer_update(customer_id: str, request: Request) -> RedirectRespons
     updates = {k: form[k][0] for k in ("status", "notes") if k in form}
     if not updates.get("status"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="'status' is required.")
-    if not CrmRepository().update(customer_id, updates):
+    # Reading the body needs `async`; the database write must not block the event loop.
+    if not await run_in_threadpool(CrmRepository().update, customer_id, updates):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Customer '{customer_id}' not found.")
     return RedirectResponse(f"/ui/customers/{quote(customer_id)}", status_code=status.HTTP_303_SEE_OTHER)

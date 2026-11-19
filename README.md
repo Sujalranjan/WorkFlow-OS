@@ -52,7 +52,9 @@ docs/               Architecture and development notes
 docker compose up --build
 ```
 
-This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). Data is kept in the `workflowos-data` volume.
+This starts Postgres, the API (http://localhost:8000/docs), the Demo CRM (http://localhost:8001/ui/customers) and the dashboard (http://localhost:5173). WorkFlowOS data is stored in Postgres (`workflowos-pg` volume). The `workflowos-data` volume holds the credential encryption key, the execution sandbox and the Demo CRM.
+
+- Set `POSTGRES_PASSWORD` in `.env` before the first start. Postgres is not exposed outside Docker; the default password is only acceptable on a single-user machine.
 
 - Create the first admin (there is no sign-up page; admins add everyone else in **Settings**):
   ```bash
@@ -62,6 +64,18 @@ This starts the API (http://localhost:8000/docs), the Demo CRM (http://localhost
 - Ports already in use? `API_PORT=8010 WEB_PORT=5180 CRM_PORT=8011 docker compose up --build`. The Gmail redirect URI follows `API_PORT` (`http://localhost:8010/api/integrations/gmail/callback`).
 - Other settings are read from `.env` if it exists (copy `.env.example`).
 - The desktop agent and browser extension run on your machine and report to `http://localhost:8000` as usual.
+- **Upgrading an install that stored data in SQLite** (before Postgres was added): start the new version, then copy the old data in once:
+  ```bash
+  docker compose up -d --build
+  docker compose exec api python -m app.cli db import-sqlite /data/workflowos.db
+  ```
+  The import shows a per-table count and checks that every row arrived. It is safe to run again, and it never overwrites rows already in Postgres. Users, sign-ins and the Gmail/Slack connections carry over, because the encryption key in the data volume stays the same. The old SQLite file is not modified.
+- **Backups**: back up the database and the encryption key separately (without the key, saved integrations must be connected again):
+  ```bash
+  docker compose exec -T postgres pg_dump -U workflowos -Fc workflowos > workflowos-$(date +%F).dump
+  docker compose cp api:/data/workflowos.secret.key ./workflowos.secret.key
+  ```
+  Restore a dump with `docker compose exec -T postgres pg_restore -U workflowos -d workflowos --clean < workflowos-YYYY-MM-DD.dump`.
 - Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
 
 ## Run locally
@@ -121,7 +135,17 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 - **Approve & run** executes the workflow for that exact email: the attachment download uses that email's message id, never "the newest match". The run is then verified and fed into the reliability profile.
 - If the CRM has no customer for the sender, or several possible ones, the run **pauses** and asks you to pick the customer. It then continues from that step. **Cancel run** stops it instead.
 - **Check now** polls immediately. A trigger only considers emails received after it was created, unless you choose a look-back window.
-- API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Set `TRIGGER_POLLER_ENABLED=false` to turn off background polling.
+- API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Polling is scheduled by the worker. Set `TRIGGER_POLLER_ENABLED=false` to turn it off.
+
+### Background jobs and the worker
+
+Slow or external work runs in a background **worker**, not inside web requests: workflow runs, verification, approved email runs and email polling. **Run**, **Check results** and **Approve and run** queue a job and return right away. The dashboard then follows the job until it finishes.
+
+- **Docker:** the `worker` service does this. To run two workers: `docker compose up -d --scale worker=2`. Each job still runs exactly once.
+- **Locally:** the API starts a worker thread itself (`EMBEDDED_WORKER=true`, the default), so `uvicorn` alone is enough. To run it separately instead, set `EMBEDDED_WORKER=false` and start `python backend/app/worker.py`.
+- **Retries:** a job that fails before it changes anything outside WorkFlowOS is retried with backoff, for example when Gmail or the CRM is briefly unreachable. A live run that may already have updated the CRM or posted to Slack is **never retried automatically**. If it's interrupted (say the worker crashes), it's marked **Needs attention** on the Overview page and in the Inbox. Check the CRM and Slack, then dismiss it.
+- **Stopping:** the worker finishes the job in hand before it exits.
+- **API:** `GET /api/jobs` and `GET /api/jobs/{job_id}`; `POST /api/jobs/{job_id}/dismiss` (admin).
 
 ### Integrations
 
@@ -149,11 +173,39 @@ Credentials saved in Settings are encrypted with `WORKFLOWOS_SECRET_KEY`, or wit
 PYTHONPATH=".;backend;desktop-agent" pytest tests -q
 ```
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs this suite, type-checks and builds the frontend, and builds and starts the Docker stack on every push and pull request.
+To run the same suite on Postgres, point it at a throwaway database. Each test gets its own schema, and the schemas are dropped afterwards:
+
+```bash
+docker run -d --name wfos-test-pg -e POSTGRES_USER=wfos -e POSTGRES_PASSWORD=wfos -e POSTGRES_DB=wfos_test -p 127.0.0.1:55432:5432 postgres:16-alpine
+WORKFLOWOS_TEST_DATABASE_URL=postgresql+psycopg://wfos:wfos@127.0.0.1:55432/wfos_test PYTHONPATH=".;backend;desktop-agent" pytest tests -q
+```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the suite on both SQLite and Postgres, type-checks and builds the frontend, and builds and starts the Docker stack on every push and pull request.
 
 Each test session uses a throwaway database, CRM database and sandbox, and strips secrets from the environment. Tests that call real Gemini, Slack or Gmail are marked `live` and skipped unless you opt in with `WORKFLOWOS_LIVE_TESTS=1`.
 
 The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [reference_workflow.py](backend/app/services/reference_workflow.py), and then execute and verify it.
+
+## Database and migrations
+
+WorkFlowOS uses SQLite by default (`DATABASE_PATH`, default `workflowos.db`). Set `DATABASE_URL` to use Postgres instead (`postgresql+psycopg://user:password@host:5432/db`).
+
+The schema is versioned with Alembic migrations in [backend/app/migrations](backend/app/migrations). The API applies them when it starts (`MIGRATE_ON_START=true`, the default). To apply or inspect them by hand:
+
+```bash
+python backend/app/cli.py db upgrade   # apply migrations
+python backend/app/cli.py db current   # show the schema revision
+python backend/app/cli.py db check     # fails if the database and the code's tables differ
+```
+
+Databases created before migrations existed are adopted automatically: existing tables and rows are kept, and missing tables and indexes are added.
+
+To change the schema, edit the tables in [backend/app/db.py](backend/app/db.py), then generate a migration and review it before committing:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe the change"
+```
 
 ## Adding a new executable action
 
