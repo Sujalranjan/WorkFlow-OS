@@ -80,19 +80,27 @@ mergeable on its own.
   connection passed a live read-only access check from Postgres.
 - README: upgrade steps, backups with `pg_dump` plus the key file, restore.
 
-### 2d: Job queue and worker
-- `jobs` table: id, kind, payload, status (`queued/running/succeeded/failed/needs_attention`),
-  attempts, run_after, locked_by, locked_until (lease), last_error, timestamps.
-- Worker loop: claim one job with `SKIP LOCKED`, renew the lease while running, release on finish;
-  graceful shutdown (finish the current job on SIGTERM); expired leases are requeued only if the
-  job had not reached an external mutation (decision 5).
-- Job kinds: `execute_plan`, `verify_execution`, `approve_run` (execute + verify + learn),
-  `poll_triggers` (scheduled, de-duplicated: at most one queued at a time).
-- API: execute/approve/verify return `202 Accepted` with a job id; `GET /api/jobs/{id}`;
-  the dashboard polls run/execution status (already shows statuses).
-- The in-process `TriggerScheduler` is removed; the worker schedules polls.
-- Execution engine records "first external mutation started" per run so the retry rule is
-  enforceable.
+### 2d: Job queue and worker (done)
+- `jobs` table (migration `0002`) and `services/job_queue.py`: claim with `FOR UPDATE SKIP LOCKED`
+  (conditional UPDATE on SQLite), renewable leases, `dedupe_key` (one active email poll), retries
+  with exponential backoff for transient errors before any side effect, `side_effects_started` ->
+  `needs_attention` (never replayed), `recover_expired()` for dead workers, `dismiss`.
+- `services/jobs.py` handlers: `execute_plan`, `verify_execution`, `execute_run`, `resume_run`,
+  `poll_triggers`. Live runs are queued with `max_attempts=1`.
+- `app/worker.py`: `python -m app.worker`; heartbeat thread; schedules polls; graceful SIGTERM.
+  `EmbeddedWorker` runs inside the API for local development (`EMBEDDED_WORKER`). The in-process
+  `TriggerScheduler` is gone. Docker: `worker` service, API has `EMBEDDED_WORKER=false`.
+- API: execute and verify return `202` with a job (validation such as approval and policy still
+  happens in the request, so bad requests still fail at once). Approving or resuming a run claims it
+  in the request (so a double-click still gets 409) and queues the execution. `GET /api/jobs[/{id}]`,
+  `POST /api/jobs/{id}/dismiss`. `RunStatus.NEEDS_ATTENTION`.
+- Dashboard follows jobs (`waitForJob`, `waitForRun`). Interrupted runs show in the Inbox; jobs that
+  need attention show on the Overview page, where an admin can dismiss them.
+- Found and fixed during the Docker rehearsal: the events and canonical-spec APIs passed
+  `DATABASE_PATH` explicitly, so with `DATABASE_URL` set (Postgres) they wrote to an empty SQLite
+  file. This was a 2c bug; a test now forbids `DATABASE_PATH` outside `config.py`/`db.py`.
+  Postgres engines now have a 10 s connect timeout, so an unreachable database fails fast instead
+  of hanging.
 
 ### 2e: Event-loop safety
 - Turn blocking `async def` endpoints into plain `def` (FastAPI runs them in a thread pool), or

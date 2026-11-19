@@ -9,6 +9,7 @@ function outcome(run: WorkflowRun): string {
     return `“${subject}” processed${run.verification_status === 'VERIFIED' ? ' and verified' : ''}.`;
   }
   if (run.status === 'NEEDS_INPUT') return `“${subject}” paused: ${run.intervention?.reason || 'input needed'}`;
+  if (run.status === 'RUNNING') return `“${subject}” is running in the background. See Runs for the result.`;
   const ended: Record<string, string> = { BLOCKED: 'stopped', FAILED: 'failed', REJECTED: 'dismissed' };
   const word = ended[run.status] || run.status.toLowerCase().replace(/_/g, ' ');
   return run.status === 'REJECTED'
@@ -18,7 +19,10 @@ function outcome(run: WorkflowRun): string {
 
 export const InboxPage: React.FC<{ onChange: () => void }> = ({ onChange }) => {
   const data = useLoad(async () => {
-    const [runs, workflows] = await Promise.all([listRuns(['PENDING_APPROVAL', 'NEEDS_INPUT'], 200), listWorkflows()]);
+    const [runs, workflows] = await Promise.all([
+      listRuns(['PENDING_APPROVAL', 'NEEDS_INPUT', 'NEEDS_ATTENTION'], 200),
+      listWorkflows(),
+    ]);
     return { runs, titles: Object.fromEntries(workflows.map((w) => [w.workflow_id, w.title])) };
   }, [], 10000);
   const canDecide = useSession().can(CAN.decideRun);
@@ -89,7 +93,7 @@ const InboxItem: React.FC<{
       : null;
 
   return (
-    <li className={`card inbox-item${run.status === 'NEEDS_INPUT' ? ' inbox-item-attention' : ''}`}>
+    <li className={`card inbox-item${run.status !== 'PENDING_APPROVAL' ? ' inbox-item-attention' : ''}`}>
       <div className="inbox-head">
         <Badge status={run.status} />
         <span className="muted small">
@@ -103,6 +107,13 @@ const InboxItem: React.FC<{
 
       {!canDecide && (
         <p className="muted small">An approver or admin needs to decide on this.</p>
+      )}
+
+      {run.status === 'NEEDS_ATTENTION' && (
+        <Alert>
+          {run.error || 'This run was interrupted after it may have changed external systems.'} Check the CRM and
+          Slack for what already happened before doing anything again; it will not be retried automatically.
+        </Alert>
       )}
 
       {canDecide && run.status === 'PENDING_APPROVAL' && (

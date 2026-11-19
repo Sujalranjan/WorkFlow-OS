@@ -42,7 +42,7 @@ flowchart LR
 | Intervention | engine + `crm_executor.py` | When a step cannot decide safely (no CRM customer, or several), it returns `NEEDS_INPUT`. The run pauses with its state saved and continues from that step once a person answers. Approval and policy are re-checked first. |
 | Verification | `verification_engine.py`, `verifiers/` | After a run, re-reads each system independently: file size and SHA-256 for downloads, a fresh CRM `GET` for updates, Slack `conversations.history` for messages. *Executed* and *verified* are reported separately. |
 | Learning | `learning_engine.py` | Reliability per workflow and step from execution and verification history, failure classification and suggestions. Advisory only: it never edits workflows or approvals. |
-| Automation | `trigger_service.py`, `trigger_scheduler.py` | Email triggers poll Gmail on an interval (`(<query>) after:<created>`). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
+| Automation | `trigger_service.py`, `worker.py` | Email triggers poll Gmail on an interval (`(<query>) after:<created>`). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
 | API and UI | `backend/app/api/`, `frontend/src/` | FastAPI (OpenAPI at `/docs`); React + TypeScript dashboard: Overview, Activity, Workflows, Inbox, Automations, Runs. |
 
 ## Integrations

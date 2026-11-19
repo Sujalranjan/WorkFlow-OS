@@ -135,7 +135,17 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 - **Approve & run** executes the workflow for that exact email: the attachment download uses that email's message id, never "the newest match". The run is then verified and fed into the reliability profile.
 - If the CRM has no customer for the sender, or several possible ones, the run **pauses** and asks you to pick the customer. It then continues from that step. **Cancel run** stops it instead.
 - **Check now** polls immediately. A trigger only considers emails received after it was created, unless you choose a look-back window.
-- API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Set `TRIGGER_POLLER_ENABLED=false` to turn off background polling.
+- API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Polling is scheduled by the worker. Set `TRIGGER_POLLER_ENABLED=false` to turn it off.
+
+### Background jobs and the worker
+
+Slow or external work runs in a background **worker**, not inside web requests: workflow runs, verification, approved email runs and email polling. **Run**, **Check results** and **Approve and run** queue a job and return right away. The dashboard then follows the job until it finishes.
+
+- **Docker:** the `worker` service does this. To run two workers: `docker compose up -d --scale worker=2`. Each job still runs exactly once.
+- **Locally:** the API starts a worker thread itself (`EMBEDDED_WORKER=true`, the default), so `uvicorn` alone is enough. To run it separately instead, set `EMBEDDED_WORKER=false` and start `python backend/app/worker.py`.
+- **Retries:** a job that fails before it changes anything outside WorkFlowOS is retried with backoff, for example when Gmail or the CRM is briefly unreachable. A live run that may already have updated the CRM or posted to Slack is **never retried automatically**. If it's interrupted (say the worker crashes), it's marked **Needs attention** on the Overview page and in the Inbox. Check the CRM and Slack, then dismiss it.
+- **Stopping:** the worker finishes the job in hand before it exits.
+- **API:** `GET /api/jobs` and `GET /api/jobs/{job_id}`; `POST /api/jobs/{job_id}/dismiss` (admin).
 
 ### Integrations
 

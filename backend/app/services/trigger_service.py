@@ -14,7 +14,7 @@ No step is ever executed without a per-run human decision, and the Gmail scope s
 
 from datetime import datetime, timezone
 import logging
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from app.models.automation import (
     CreateTriggerRequest,
@@ -198,10 +198,27 @@ class TriggerService:
 
     def approve_run(self, run_id: str, decided_by: str) -> WorkflowRun:
         """Human approval of one run: plan it for this exact email and execute it live."""
+        self.claim_for_approval(run_id, decided_by)
+        return self.execute_claimed_run(run_id, decided_by)
+
+    def claim_for_approval(self, run_id: str, decided_by: str) -> WorkflowRun:
+        """Atomically move PENDING_APPROVAL -> RUNNING. Stops a double-click from running twice."""
         self._require_run(run_id)
         run = self.repo.transition_run(run_id, [RunStatus.PENDING_APPROVAL], RunStatus.RUNNING, decided_by)
         if run is None:
             raise TriggerError(f"Run '{run_id}' is no longer awaiting approval.")
+        return run
+
+    def execute_claimed_run(
+        self, run_id: str, decided_by: str, before_execute: Optional[Callable[[], None]] = None
+    ) -> WorkflowRun:
+        """Plan and execute a run already claimed by claim_for_approval (called by the worker).
+
+        `before_execute` runs right before the first step that may change external systems.
+        """
+        run = self._require_run(run_id)
+        if run.status != RunStatus.RUNNING:
+            raise TriggerError(f"Run '{run_id}' is {run.status.value}, not approved for execution.")
 
         try:
             spec = self.spec_repo.get_by_id(run.workflow_id)
@@ -218,6 +235,8 @@ class TriggerService:
             run.execution_plan_id = plan.execution_plan_id
             self.repo.save_run(run)
 
+            if before_execute:
+                before_execute()
             record = self.engine.execute_plan(
                 execution_plan_id=plan.execution_plan_id,
                 idempotency_key=f"workflow-run:{run.run_id}",
@@ -234,15 +253,36 @@ class TriggerService:
 
     def resume_run(self, run_id: str, inputs: Dict[str, str], decided_by: str) -> WorkflowRun:
         """Continue a paused run with the value a person supplied."""
+        self.claim_for_resume(run_id, decided_by)
+        return self.continue_claimed_run(run_id, inputs, decided_by)
+
+    def claim_for_resume(self, run_id: str, decided_by: str) -> WorkflowRun:
+        """Atomically move NEEDS_INPUT -> RUNNING."""
         self._require_run(run_id)
         run = self.repo.transition_run(run_id, [RunStatus.NEEDS_INPUT], RunStatus.RUNNING, decided_by)
         if run is None:
             raise TriggerError(f"Run '{run_id}' is not waiting for input.")
+        return run
+
+    def continue_claimed_run(
+        self,
+        run_id: str,
+        inputs: Dict[str, str],
+        decided_by: str,
+        before_execute: Optional[Callable[[], None]] = None,
+    ) -> WorkflowRun:
+        """Resume a run claimed by claim_for_resume (called by the worker)."""
+        run = self._require_run(run_id)
+        if run.status != RunStatus.RUNNING:
+            raise TriggerError(f"Run '{run_id}' is {run.status.value}, not resumed.")
         try:
+            if before_execute:
+                before_execute()
             record = self.engine.resume_execution(run.execution_id or "", inputs, resumed_by=decided_by)
         except ValueError as e:
             # Invalid input: put the run back so the person can try again.
             run.status = RunStatus.NEEDS_INPUT
+            run.error = f"Input not accepted: {e}"
             self.repo.save_run(run)
             raise TriggerError(str(e)) from e
         except Exception as e:  # noqa: BLE001
@@ -267,6 +307,15 @@ class TriggerService:
                 record.end_time = datetime.now(timezone.utc).isoformat()
                 self.exec_repo.save(record)
         run.intervention = None
+        return self.repo.save_run(run)
+
+    def mark_interrupted(self, run_id: str, reason: str) -> Optional[WorkflowRun]:
+        """The worker stopped mid-run after external changes may have happened: a person must check."""
+        run = self.repo.get_run(run_id)
+        if run is None or run.status != RunStatus.RUNNING:
+            return run
+        run.status = RunStatus.NEEDS_ATTENTION
+        run.error = reason
         return self.repo.save_run(run)
 
     def _require_run(self, run_id: str) -> WorkflowRun:

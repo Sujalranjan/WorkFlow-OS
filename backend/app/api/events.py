@@ -3,7 +3,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
-from app.config import DATABASE_PATH
 from app.models.event import ActivityEvent
 from app.repositories.event_repository import EventRepository
 from app.services.event_service import EventService
@@ -12,8 +11,8 @@ router = APIRouter(prefix="/api/events", tags=["Events"])
 
 
 def get_event_service() -> EventService:
-    """Dependency injector providing an EventService configured with the database path."""
-    repository = EventRepository(db_path=DATABASE_PATH)
+    """Dependency injector providing an EventService on the configured database."""
+    repository = EventRepository()
     return EventService(repository=repository)
 
 

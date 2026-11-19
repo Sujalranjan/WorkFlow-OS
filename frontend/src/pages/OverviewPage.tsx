@@ -1,6 +1,57 @@
 import React from 'react';
-import { getStatus, listEvents, listExecutions, listTriggers, listWorkflows } from '../api';
-import { Alert, Badge, PageHeader, href, timeAgo, useLoad } from '../ui';
+import { dismissJob, getStatus, listEvents, listExecutions, listJobs, listTriggers, listWorkflows } from '../api';
+import { Alert, Badge, PageHeader, href, timeAgo, useAction, useLoad, useSession } from '../ui';
+
+const JOB_LABEL: Record<string, string> = {
+  execute_plan: 'Workflow run',
+  execute_run: 'Email-triggered run',
+  resume_run: 'Resumed run',
+  verify_execution: 'Verification',
+  poll_triggers: 'Email check',
+};
+
+/** Background jobs that stopped mid-way after possibly changing external systems. */
+const AttentionJobs: React.FC = () => {
+  const jobs = useLoad(() => listJobs(['needs_attention']), [], 30000);
+  const action = useAction();
+  const canDismiss = useSession().user.role === 'admin';
+  if (!jobs.data?.length) return null;
+  return (
+    <section className="card">
+      <h2>Needs attention</h2>
+      <p className="muted small">
+        These were interrupted after they may have changed the CRM, Slack or files. They are never retried
+        automatically: check what already happened, then dismiss.
+      </p>
+      {action.error && <Alert>{action.error}</Alert>}
+      <ul className="rows">
+        {jobs.data.map((j) => (
+          <li key={j.job_id} className="trigger">
+            <div className="trigger-main">
+              <div className="row-title">
+                {JOB_LABEL[j.kind] || j.kind} <Badge status={j.status} />
+              </div>
+              <span className="muted small">
+                {j.last_error} · started by {j.created_by || 'system'} {timeAgo(j.started_at)}
+              </span>
+            </div>
+            {canDismiss && (
+              <div className="actions">
+                <button
+                  className="btn-secondary"
+                  disabled={action.busy !== null}
+                  onClick={() => action.run(`dismiss-${j.job_id}`, () => dismissJob(j.job_id)).then(() => jobs.reload())}
+                >
+                  Checked, dismiss
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
 
 interface Props {
   inboxCount: number;
@@ -84,6 +135,7 @@ export const OverviewPage: React.FC<Props> = ({ inboxCount }) => {
         subtitle="WorkFlowOS learns the routines you repeat across apps and runs them for you, with your approval."
       />
       {summary.error && <Alert>{summary.error}</Alert>}
+      <AttentionJobs />
 
       {inboxCount > 0 && (
         <a className="callout" href={href('inbox')}>

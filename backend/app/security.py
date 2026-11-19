@@ -101,6 +101,10 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("GET", "/api/workflows/{workflow_id}/learning"): V,
     ("GET", "/api/workflows/{workflow_id}/learning/events"): V,
     ("POST", "/api/workflows/{workflow_id}/learning/refresh"): V,
+    # background jobs
+    ("GET", "/api/jobs"): V,
+    ("GET", "/api/jobs/{job_id}"): V,
+    ("POST", "/api/jobs/{job_id}/dismiss"): AD,
     # automation
     ("POST", "/api/automation/triggers"): AD,
     ("GET", "/api/automation/triggers"): V,

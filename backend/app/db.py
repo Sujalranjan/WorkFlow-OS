@@ -225,6 +225,36 @@ oauth_states = Table(
 )
 
 
+# ------------------------------------------------------------------------ jobs
+
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("job_id", Text, primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("payload", Document, nullable=False),
+    Column("result", Document),
+    Column("attempts", Integer, nullable=False),
+    Column("max_attempts", Integer, nullable=False),
+    # ISO-8601 UTC with fixed microsecond precision, so text comparison orders correctly
+    Column("run_after", Text, nullable=False),
+    Column("locked_by", Text),
+    Column("locked_until", Text),
+    # Set before the first step that may change something outside WorkFlowOS; such a job is never retried.
+    Column("side_effects_started", Boolean, nullable=False),
+    # At most one active job per key (e.g. the email poll). Cleared when the job finishes.
+    Column("dedupe_key", Text),
+    Column("last_error", Text),
+    Column("created_by", Text),
+    Column("created_at", Text, nullable=False),
+    Column("started_at", Text),
+    Column("finished_at", Text),
+    UniqueConstraint("dedupe_key", name="uq_jobs_dedupe_key"),
+    Index("ix_jobs_status_run_after", "status", "run_after"),
+)
+
+
 # ---------------------------------------------------------------------- engines
 
 # Test hook: create missing tables directly from `metadata` instead of running migrations.
@@ -259,7 +289,8 @@ def _new_engine(url: str) -> Engine:
         # A connection per use (no pool), as before: SQLite connections are cheap, and pooled ones
         # would keep the file open (Windows cannot delete or move an open file).
         return create_engine(url, poolclass=NullPool, connect_args={"timeout": 10, "check_same_thread": False})
-    options: Dict[str, Any] = {"pool_pre_ping": True}
+    # Fail fast if the database is unreachable instead of hanging (the worker retries its tick).
+    options: Dict[str, Any] = {"pool_pre_ping": True, "connect_args": {"connect_timeout": 10}}
     options.update(engine_options)
     if options.get("poolclass") is NullPool:
         options.pop("pool_pre_ping", None)

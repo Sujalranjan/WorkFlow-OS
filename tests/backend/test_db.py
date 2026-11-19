@@ -67,3 +67,29 @@ def test_existing_sqlite_files_from_before_sqlalchemy_still_read(tmp_path):
     conn.commit()
     conn.close()
     assert AuthRepository(str(path)).get_api_key(key.key_id).name == "laptop"
+
+
+def test_no_code_pins_itself_to_the_sqlite_file():
+    """Regression: two API modules passed DATABASE_PATH explicitly and ignored DATABASE_URL (Postgres)."""
+    import pathlib
+    import re
+
+    backend = pathlib.Path(db.__file__).resolve().parent
+    offenders = []
+    for path in backend.rglob("*.py"):
+        if path.name in ("config.py", "db.py") or "migrations" in path.parts:
+            continue
+        if re.search(r"\bDATABASE_PATH\b", path.read_text(encoding="utf-8")):
+            offenders.append(str(path.relative_to(backend)))
+    assert offenders == [], f"Use the default database (Repository()), not DATABASE_PATH: {offenders}"
+
+
+def test_api_dependencies_use_database_url(monkeypatch, tmp_path):
+    from app.api import canonical, events
+
+    url = "sqlite:///" + str(tmp_path / "configured.db").replace("\\", "/")
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setattr(db, "url_mapper", None)
+    monkeypatch.setattr(canonical, "_canonical_repository", None)
+    assert str(events.get_event_service().repository.engine.url) == url
+    assert str(canonical.get_canonical_repository().engine.url) == url

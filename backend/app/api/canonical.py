@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.dna import _generate_dna_from_events
 from app.api.events import get_event_service
 from app.api.semantic import get_semantic_engine
-from app.config import DATABASE_PATH
 from app.models.canonical import (
     ApprovalActionRequest,
     ApprovalState,
@@ -42,7 +41,7 @@ _canonical_factory: Optional[CanonicalWorkflowFactory] = None
 def get_canonical_repository() -> CanonicalWorkflowRepository:
     global _canonical_repository
     if _canonical_repository is None:
-        _canonical_repository = CanonicalWorkflowRepository(db_path=DATABASE_PATH)
+        _canonical_repository = CanonicalWorkflowRepository()  # the configured database (DATABASE_URL or file)
     return _canonical_repository
 
 

@@ -84,13 +84,22 @@ def test_database_from_before_migrations_is_adopted_without_losing_data(tmp_path
 
 def test_baseline_refuses_to_downgrade(tmp_path):
     target = _fresh(tmp_path)
-    migrate.upgrade(target)
+    migrate.upgrade(target, revision="0001")
     cfg = migrate.alembic_config()
     with db.get_engine(target, create_tables=False).connect() as connection:
         cfg.attributes["connection"] = connection
         with pytest.raises(RuntimeError, match="cannot be downgraded"):
             command.downgrade(cfg, "base")
-    assert migrate.current_revision(target) == migrate.head_revision()
+    assert migrate.current_revision(target) == "0001"
+
+
+def test_jobs_migration_upgrades_and_downgrades(tmp_path):
+    target = _fresh(tmp_path)
+    migrate.upgrade(target, revision="0001")
+    assert "jobs" not in inspect(db.get_engine(target, create_tables=False)).get_table_names()
+    assert migrate.upgrade(target) == "0002"
+    assert "jobs" in inspect(db.get_engine(target, create_tables=False)).get_table_names()
+    assert migrate.pending_changes(target) == []
 
 
 def test_api_applies_migrations_on_start(monkeypatch):

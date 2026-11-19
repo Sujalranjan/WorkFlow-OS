@@ -55,9 +55,11 @@ def test_recorded_browser_activity_becomes_an_approved_executable_workflow(clien
     assert len(plan["excluded_steps"]) == 2
 
     # 5. Dry run through the real executor registry: every step routes and simulates
-    record = client.post(
+    job = client.post(
         f"/api/workflows/execution-plans/{plan['execution_plan_id']}/execute", json={"execution_mode": "DRY_RUN"}
     ).json()
+    assert job["status"] == "succeeded" and job["side_effects_started"] is False  # dry runs change nothing
+    record = client.get(f"/api/workflows/executions/{job['result']['execution_id']}").json()
     assert record["execution_mode"] == "DRY_RUN"
     assert record["status"] == "COMPLETED", record.get("error_summary")
     assert [r["executor_name"] for r in record["step_results"]] == [

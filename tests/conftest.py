@@ -46,6 +46,9 @@ TEST_DATABASE_URL = os.getenv("WORKFLOWOS_TEST_DATABASE_URL", "").strip()
 os.environ["WORKFLOWOS_SKIP_DOTENV"] = "1"
 # Test databases get their tables directly (fast); migrations are tested in test_migrations.py.
 os.environ["MIGRATE_ON_START"] = "false"
+# Jobs run inside the request that submits them, so API tests see finished jobs; no background worker.
+os.environ["JOBS_INLINE"] = "true"
+os.environ["EMBEDDED_WORKER"] = "false"
 # Tests drive trigger polling explicitly; never start the background poller.
 os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 

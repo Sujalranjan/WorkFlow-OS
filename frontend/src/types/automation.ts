@@ -18,7 +18,8 @@ export type RunStatus =
   | 'COMPLETED'
   | 'FAILED'
   | 'BLOCKED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'NEEDS_ATTENTION';
 
 export interface SourceEmail {
   message_id: string;

@@ -123,15 +123,72 @@ export const planWorkflow = (id: string, runtimeParameters?: Record<string, stri
 export const dryRunPlan = (planId: string) =>
   post<DryRunResult>(`/api/workflows/execution-plans/${encodeURIComponent(planId)}/dry-run`);
 
-export const executePlan = (planId: string) =>
-  post<ExecutionAuditRecord>(`/api/workflows/execution-plans/${encodeURIComponent(planId)}/execute`, {
+// --- background jobs ----------------------------------------------------------------
+
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'needs_attention' | 'dismissed';
+
+export interface Job {
+  job_id: string;
+  kind: string;
+  status: JobStatus;
+  result: Record<string, any> | null;
+  attempts: number;
+  max_attempts: number;
+  side_effects_started: boolean;
+  last_error: string | null;
+  created_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+const FINISHED: JobStatus[] = ['succeeded', 'failed', 'needs_attention', 'dismissed'];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export const getJob = (id: string) => request<Job>(`/api/jobs/${encodeURIComponent(id)}`);
+export const listJobs = (statuses?: JobStatus[], limit = 50) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  (statuses || []).forEach((s) => params.append('status', s));
+  return request<Job[]>(`/api/jobs?${params}`);
+};
+export const dismissJob = (id: string) => post<Job>(`/api/jobs/${encodeURIComponent(id)}/dismiss`);
+
+/** Wait for the worker to finish a job; throws with the job's error if it did not succeed. */
+export async function waitForJob(job: Job, timeoutMs = 10 * 60 * 1000): Promise<Job> {
+  const deadline = Date.now() + timeoutMs;
+  let current = job;
+  while (!FINISHED.includes(current.status)) {
+    if (Date.now() > deadline) throw new Error('Still running in the background. Check Runs for the result.');
+    await sleep(1000);
+    current = await getJob(job.job_id);
+  }
+  if (current.status !== 'succeeded') {
+    const why = current.status === 'needs_attention' ? 'Interrupted, needs attention' : 'Failed';
+    throw new Error(`${why}: ${current.last_error || 'no details'}`);
+  }
+  return current;
+}
+
+export const getExecution = (executionId: string) =>
+  request<ExecutionAuditRecord>(`/api/workflows/executions/${encodeURIComponent(executionId)}`);
+
+/** Queue a live run, wait for the worker, and return the execution record. */
+export async function executePlan(planId: string): Promise<ExecutionAuditRecord> {
+  const job = await post<Job>(`/api/workflows/execution-plans/${encodeURIComponent(planId)}/execute`, {
     execution_mode: 'LIVE',
   });
+  const done = await waitForJob(job);
+  return getExecution(done.result!.execution_id);
+}
 
-export const verifyExecution = (executionId: string) =>
-  post<VerificationResult>(`/api/workflows/executions/${encodeURIComponent(executionId)}/verify`, {
+/** Queue independent verification, wait for it, and return the result. */
+export async function verifyExecution(executionId: string): Promise<VerificationResult> {
+  const job = await post<Job>(`/api/workflows/executions/${encodeURIComponent(executionId)}/verify`, {
     force_recheck: true,
   });
+  await waitForJob(job);
+  return getVerification(executionId);
+}
 
 export const getVerification = (executionId: string) =>
   request<VerificationResult>(`/api/workflows/executions/${encodeURIComponent(executionId)}/verification`);
@@ -174,12 +231,26 @@ export const listRuns = (statuses?: RunStatus[], limit = 100) => {
   return request<WorkflowRun[]>(`/api/automation/runs?${params}`);
 };
 
-export const approveRun = (id: string) => post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/approve`);
+export const getRun = (id: string) => request<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}`);
+
+/** Poll a run the worker is executing until it leaves RUNNING (or the wait times out). */
+export async function waitForRun(run: WorkflowRun, timeoutMs = 5 * 60 * 1000): Promise<WorkflowRun> {
+  const deadline = Date.now() + timeoutMs;
+  let current = run;
+  while (current.status === 'RUNNING' && Date.now() < deadline) {
+    await sleep(1500);
+    current = await getRun(run.run_id);
+  }
+  return current;
+}
+
+export const approveRun = (id: string) =>
+  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/approve`).then(waitForRun);
 
 export const rejectRun = (id: string) => post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/reject`);
 
 export const resumeRun = (id: string, inputs: Record<string, string>) =>
-  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/resume`, { inputs });
+  post<WorkflowRun>(`/api/automation/runs/${encodeURIComponent(id)}/resume`, { inputs }).then(waitForRun);
 
 // --- auth ---------------------------------------------------------------------------
 

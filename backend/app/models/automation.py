@@ -47,6 +47,8 @@ class RunStatus(str, Enum):
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
     REJECTED = "REJECTED"
+    # The worker stopped mid-run after it may have changed external systems; a person must check.
+    NEEDS_ATTENTION = "NEEDS_ATTENTION"
 
 
 ACTIVE_RUN_STATUSES = (RunStatus.PENDING_APPROVAL, RunStatus.RUNNING, RunStatus.NEEDS_INPUT)

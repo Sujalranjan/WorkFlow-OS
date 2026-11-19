@@ -26,6 +26,7 @@ from app.models.automation import (
     WorkflowRun,
 )
 from app.security import current_actor
+from app.services.jobs import submit as submit_job
 from app.services.trigger_service import TriggerError, TriggerService
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
@@ -101,14 +102,22 @@ def get_run(run_id: str) -> WorkflowRun:
     return run
 
 
-@router.post("/runs/{run_id}/approve", response_model=WorkflowRun)
+@router.post("/runs/{run_id}/approve", response_model=WorkflowRun, status_code=status.HTTP_202_ACCEPTED)
 def approve_run(run_id: str, actor: str = Depends(current_actor)) -> WorkflowRun:
-    return _call(get_trigger_service().approve_run, run_id, actor)
+    """Approve one run. It is claimed here (so a second click gets 409) and executed by the worker."""
+    service = get_trigger_service()
+    _call(service.claim_for_approval, run_id, actor)
+    submit_job("execute_run", {"run_id": run_id, "decided_by": actor}, created_by=actor, max_attempts=1)
+    return service.repo.get_run(run_id)
 
 
-@router.post("/runs/{run_id}/resume", response_model=WorkflowRun)
+@router.post("/runs/{run_id}/resume", response_model=WorkflowRun, status_code=status.HTTP_202_ACCEPTED)
 def resume_run(run_id: str, req: ResumeRunRequest, actor: str = Depends(current_actor)) -> WorkflowRun:
-    return _call(get_trigger_service().resume_run, run_id, req.inputs, actor)
+    """Continue a paused run with the supplied value; the worker runs the remaining steps."""
+    service = get_trigger_service()
+    _call(service.claim_for_resume, run_id, actor)
+    submit_job("resume_run", {"run_id": run_id, "inputs": req.inputs, "decided_by": actor}, created_by=actor, max_attempts=1)
+    return service.repo.get_run(run_id)
 
 
 @router.post("/runs/{run_id}/reject", response_model=WorkflowRun)

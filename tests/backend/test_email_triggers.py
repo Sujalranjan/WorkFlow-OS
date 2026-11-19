@@ -353,3 +353,55 @@ def test_automation_api_validation_and_listing(h, monkeypatch):
     assert client.post(f"/api/automation/runs/{run_id}/reject", json={"decided_by": "ops"}).json()["status"] == "REJECTED"
     assert client.post(f"/api/automation/runs/{run_id}/approve").status_code == 409
     assert client.get("/api/automation/runs/run-missing").status_code == 404
+
+
+# ---------------------------------------------------------- background jobs
+
+
+def test_api_approval_is_claimed_in_the_request_and_executed_by_the_worker(h, monkeypatch):
+    from app.api import automation as automation_api
+    from app.main import app
+
+    monkeypatch.setattr(automation_api, "_service", h.service)
+    client = TestClient(app)
+    _, result = h.queue(_message("msg-api"))
+    run_id = result.new_runs[0].run_id
+
+    res = client.post(f"/api/automation/runs/{run_id}/approve")
+    assert res.status_code == 202
+    # Tests run jobs inline, so the worker has already finished it.
+    assert client.get(f"/api/automation/runs/{run_id}").json()["status"] == RunStatus.COMPLETED.value
+    job = next(j for j in client.get("/api/jobs", params={"kind": "execute_run"}).json() if j["payload"]["run_id"] == run_id)
+    assert job["status"] == "succeeded" and job["side_effects_started"] is True and job["max_attempts"] == 1
+    assert client.post(f"/api/automation/runs/{run_id}/approve").status_code == 409  # cannot run twice
+    assert client.post(f"/api/jobs/{job['job_id']}/dismiss").status_code == 409  # nothing to dismiss
+
+
+def test_worker_dying_mid_run_flags_the_run_instead_of_replaying_it(h, monkeypatch):
+    import time
+
+    from app.api import automation as automation_api
+    from app.main import app
+    from app.models.jobs import JobStatus
+    from app.services.job_queue import JobQueue
+    from app.worker import Worker
+
+    monkeypatch.setattr(automation_api, "_service", h.service)
+    _, result = h.queue(_message("msg-crash"))
+    run_id = result.new_runs[0].run_id
+    h.service.claim_for_approval(run_id, "ops")
+
+    queue = JobQueue()
+    job = queue.enqueue("execute_run", {"run_id": run_id, "decided_by": "ops"}, max_attempts=1)
+    queue.claim("worker-that-dies", lease_seconds=0.01, job_id=job.job_id)
+    queue.mark_side_effects(job.job_id)  # it had started changing things
+    time.sleep(0.05)
+
+    Worker(queue=queue, worker_id="survivor", schedule_trigger_polls=False).tick()
+    assert queue.get(job.job_id).status == JobStatus.NEEDS_ATTENTION
+    run = h.service.repo.get_run(run_id)
+    assert run.status == RunStatus.NEEDS_ATTENTION and "external systems" in run.error
+    h.crm.update_customer.assert_not_called()  # nothing was replayed
+
+    client = TestClient(app)
+    assert client.post(f"/api/jobs/{job.job_id}/dismiss").json()["status"] == "dismissed"

@@ -34,6 +34,17 @@ GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_SEARCH_QUERY = os.getenv("GMAIL_SEARCH_QUERY", "from:me")
 GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "5"))
 
+# Background jobs (running, verifying, polling). The worker is `python -m app.worker`; with
+# EMBEDDED_WORKER the API also runs one in-process (local development: one command is enough).
+# Docker sets EMBEDDED_WORKER=false and runs a separate worker container.
+EMBEDDED_WORKER = os.getenv("EMBEDDED_WORKER", "true").lower() in ("true", "1", "yes")
+# Run each job immediately in the request that submitted it (test suite only).
+JOBS_INLINE = os.getenv("JOBS_INLINE", "false").lower() in ("true", "1", "yes")
+WORKER_LEASE_SECONDS = float(os.getenv("WORKER_LEASE_SECONDS", "60"))
+WORKER_POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "1"))
+# Attempts for jobs that are safe to retry (live runs are never retried)
+JOB_MAX_ATTEMPTS = int(os.getenv("JOB_MAX_ATTEMPTS", "3"))
+
 # Apply database migrations when the API starts (python -m app.cli db upgrade does it by hand).
 MIGRATE_ON_START = os.getenv("MIGRATE_ON_START", "true").lower() in ("true", "1", "yes")
 
