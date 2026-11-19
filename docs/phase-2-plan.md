@@ -1,4 +1,4 @@
-# Phase 2: Postgres and background workers
+# Phase 2: Postgres and background workers (complete)
 
 Goal: WorkFlowOS keeps working when several people use it at once and when a workflow takes
 minutes. Data moves to Postgres with versioned migrations, and slow work (running workflows,
@@ -111,10 +111,14 @@ mergeable on its own.
 - `tests/backend/test_event_loop.py`: no WorkFlowOS endpoint may be `async` unless allow-listed, and
   three requests that each wait 1s must finish together (the old code took 3.0s, one after another).
 
-### 2f: CI and docs
-- CI: Postgres service; migrations applied from empty; suite on both databases; Docker job starts
-  `postgres`, `api`, `worker`, `crm`, `web` and checks that an enqueued dry run completes.
-- `docs/architecture.md` and README updated; `.env.example` gains `DATABASE_URL`, worker settings.
+### 2f: CI and docs (done)
+- CI: backend tests on SQLite and on Postgres (service container), frontend build, and a Docker job.
+  The Docker job starts `postgres`, `api`, `worker`, `crm` and `web`, checks the migration revision
+  and `db check`, runs `scripts/smoke_test.py` (a dry run queued through the API and finished by the
+  worker, then verification), and stops the worker to confirm a graceful shutdown.
+- `scripts/smoke_test.py` uses the standard library only, so it can run against any install.
+- Docs: README (database and migrations, background jobs, Docker upgrade and backups),
+  `docs/architecture.md` (jobs and worker, database, storage), `.env.example`.
 
 ## Risks and how they are handled
 

@@ -81,8 +81,9 @@ jobs:
       - name: Start the stack and check health
         run: |
           mkdir -p secrets
+          # Postgres, API, worker, Demo CRM, dashboard
           docker compose up -d
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             curl -sf http://localhost:8000/health && curl -sf http://localhost:8001/api/crm/health && break
             sleep 2
           done
@@ -93,6 +94,18 @@ jobs:
           docker compose exec -T -e WORKFLOWOS_NEW_PASSWORD=ci-admin-password api             python -m app.cli create-user --email ci@example.com --name CI --role admin
           curl -sf -c jar -H 'Content-Type: application/json'             -d '{"email":"ci@example.com","password":"ci-admin-password"}' http://localhost:8000/api/auth/login
           curl -sf -b jar http://localhost:8000/api/status
+      - name: Database and worker
+        run: |
+          # The API migrated Postgres on start; the schema must match the code exactly.
+          docker compose exec -T api python -m app.cli db current
+          docker compose exec -T api python -m app.cli db check
+          test "$(docker compose ps --status running --services | grep -c '^worker$')" = "1"
+          # Queue a dry run through the API and wait for the worker container to finish it.
+          python3 scripts/smoke_test.py --api http://localhost:8000 --email ci@example.com --password ci-admin-password
+      - name: Worker stops gracefully
+        run: |
+          docker compose stop -t 60 worker
+          docker compose logs worker | grep -q "stopped"
       - name: Logs on failure
         if: failure()
         run: docker compose logs
