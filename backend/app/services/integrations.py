@@ -32,6 +32,7 @@ from app.services.credential_store import (
     SHARED_FOLDER,
     SHEETS,
     SLACK,
+    SLACK_OAUTH_CLIENT,
     CredentialStore,
     get_credential_store,
 )
@@ -42,6 +43,8 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
+SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
 
 class IntegrationError(Exception):
@@ -200,7 +203,7 @@ class IntegrationService:
         verifier, challenge = _pkce_pair()
         self.store.save_oauth_state(
             state,
-            {"verifier": verifier, "actor": actor, "return_to": (return_to or "").rstrip("/"), "client_id": client[0]},
+            {"provider": "gmail", "verifier": verifier, "actor": actor, "return_to": (return_to or "").rstrip("/"), "client_id": client[0]},
         )
         params = {
             "client_id": client[0],
@@ -219,7 +222,7 @@ class IntegrationService:
     def finish_gmail_connect(self, state: str, code: Optional[str], error: Optional[str]) -> Tuple[str, Dict[str, Any]]:
         """Complete the sign-in. Returns (dashboard origin to return to, connected account info)."""
         pending = self.store.pop_oauth_state(state)
-        if not pending:
+        if not pending or pending.get("provider", "gmail") != "gmail":
             raise IntegrationError("This sign-in link expired or was already used. Start again from Settings.", "expired")
         return_to = pending.get("return_to") or ""
         try:
@@ -367,6 +370,97 @@ class IntegrationService:
         }
         self.store.put(SLACK, {"bot_token": token}, metadata, actor)
         return metadata
+
+    # --------------------------------------------------------- add to slack
+
+    @property
+    def slack_redirect_uri(self) -> str:
+        return f"{config.PUBLIC_API_URL.rstrip('/')}/api/integrations/slack/callback"
+
+    def slack_app_config(self) -> Optional[Tuple[str, str, str]]:
+        """(client_id, client_secret, source) of the team's Slack app, from Settings or the environment."""
+        stored = self.store.get(SLACK_OAUTH_CLIENT)
+        if stored and stored.secret.get("client_id") and stored.secret.get("client_secret"):
+            return stored.secret["client_id"], stored.secret["client_secret"], "settings"
+        cid, secret = os.getenv("SLACK_CLIENT_ID", "").strip(), os.getenv("SLACK_CLIENT_SECRET", "").strip()
+        return (cid, secret, "environment") if cid and secret else None
+
+    def save_slack_app(self, client_id: str, client_secret: str, actor: str) -> None:
+        client_id, client_secret = client_id.strip(), client_secret.strip()
+        if not (client_id.replace(".", "").isdigit() and "." in client_id):
+            raise IntegrationError("That does not look like a Slack app Client ID (digits with a dot, from Basic Information).")
+        if len(client_secret) < 16:
+            raise IntegrationError("Enter the app's Client Secret (Basic Information > App Credentials).")
+        self.store.put(SLACK_OAUTH_CLIENT, {"client_id": client_id, "client_secret": client_secret}, {"client_id": client_id}, actor)
+
+    def remove_slack_app(self) -> None:
+        self.store.delete(SLACK_OAUTH_CLIENT)
+
+    def start_slack_connect(self, actor: str, return_to: Optional[str] = None) -> str:
+        """Slack's 'Add to Slack' page for the team's app. Needs HTTPS (Slack refuses plain-HTTP redirects)."""
+        app = self.slack_app_config()
+        if not app:
+            raise IntegrationError("Add the Slack app's Client ID and Secret first.")
+        if not self.slack_redirect_uri.startswith("https://"):
+            raise IntegrationError("Add to Slack needs WorkFlowOS on HTTPS (PUBLIC_API_URL). Paste a bot token instead.")
+        if return_to and return_to.rstrip("/") not in config.FRONTEND_ORIGINS:
+            raise IntegrationError("Unknown dashboard address.")
+        state = secrets.token_urlsafe(32)
+        self.store.save_oauth_state(
+            state, {"provider": "slack", "actor": actor, "return_to": (return_to or "").rstrip("/"), "client_id": app[0]}
+        )
+        params = {
+            "client_id": app[0],
+            "scope": ",".join(config.SLACK_OAUTH_SCOPES),
+            "redirect_uri": self.slack_redirect_uri,
+            "state": state,
+        }
+        return f"{SLACK_AUTHORIZE_URL}?{urlencode(params)}"
+
+    def finish_slack_connect(self, state: str, code: Optional[str], error: Optional[str]) -> Tuple[str, Dict[str, Any]]:
+        """Exchange the code for the app's bot token and store it (the chosen channel is kept)."""
+        pending = self.store.pop_oauth_state(state)
+        if not pending or pending.get("provider") != "slack":
+            raise IntegrationError("This Add to Slack link expired or was already used. Start again from Settings.", "expired")
+        return_to = pending.get("return_to") or ""
+        try:
+            if error or not code:
+                raise IntegrationError("Slack installation was cancelled.", "denied")
+            app = self.slack_app_config()
+            if not app or app[0] != pending["client_id"]:
+                raise IntegrationError("The Slack app changed during installation. Start again.", "client_changed")
+            with self._http_factory() as http:
+                res = http.post(
+                    SLACK_TOKEN_URL,
+                    data={"code": code, "redirect_uri": self.slack_redirect_uri},
+                    auth=(app[0], app[1]),
+                )
+                data = res.json() if res.status_code == 200 else {}
+        except httpx.HTTPError:
+            err = IntegrationError("Could not reach Slack. Try again.", "network")
+            err.return_to = return_to
+            raise err
+        except IntegrationError as e:
+            e.return_to = return_to
+            raise
+        token = data.get("access_token") or ""
+        if not data.get("ok") or data.get("token_type") != "bot" or not token.startswith("xoxb-"):
+            err = IntegrationError("Slack did not return a bot token for this app.", "exchange_failed")
+            err.return_to = return_to
+            raise err
+        previous = self.store.info(SLACK)
+        keep = {k: v for k, v in (previous.metadata if previous else {}).items()
+                if k in ("channel_id", "channel_name", "bot_in_channel", "alert_channel_id", "alert_on_pending")}
+        metadata = {
+            **keep,
+            "team": (data.get("team") or {}).get("name"),
+            "bot": data.get("bot_user_id"),
+            "installed_with": "add_to_slack",
+            "scopes": sorted(str(data.get("scope") or "").split(",")),
+        }
+        self.store.put(SLACK, {"bot_token": token}, metadata, pending.get("actor"))
+        logger.info("Slack connected with Add to Slack", extra={"team": metadata["team"], "actor": pending.get("actor")})
+        return return_to, metadata
 
     def save_slack_alerts(self, channel_id: Optional[str], notify_pending: bool, actor: str) -> None:
         """Where operational alerts go (a channel the bot is in), or None to turn alerts off."""
@@ -525,6 +619,11 @@ class IntegrationService:
                 # True/False as checked when saved; None when unknown (token without channels:read)
                 "bot_in_channel": slack.metadata.get("bot_in_channel") if slack else None,
                 "alert_channel_id": slack.metadata.get("alert_channel_id") if slack else (config.ALERT_SLACK_CHANNEL or None),
+                "installed_with": slack.metadata.get("installed_with") if slack else None,
+                "app_configured": self.slack_app_config() is not None,
+                "app_client_id": (self.slack_app_config() or (None,))[0],
+                "app_source": (self.slack_app_config() or (None, None, None))[2],
+                "redirect_uri": self.slack_redirect_uri,
                 "alert_on_pending": bool(slack.metadata.get("alert_on_pending", True)) if slack else True,
                 "team": slack.metadata.get("team") if slack else None,
                 "updated_at": slack.updated_at if slack else None,

@@ -16,7 +16,7 @@ if os.getenv("WORKFLOWOS_SKIP_DOTENV", "").lower() not in ("1", "true", "yes"):
         load_dotenv(override=False)
 
 PROJECT_NAME = "WorkFlowOS Backend"
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
 PORT = int(os.getenv("BACKEND_PORT", "8000"))
@@ -100,5 +100,7 @@ SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 SLACK_API_BASE_URL = os.getenv("SLACK_API_BASE_URL", "https://slack.com/api")
 SLACK_SCOPES = ["chat:write", "channels:history"]
+# Requested by "Add to Slack": post, read back what was posted (verification), list channels.
+SLACK_OAUTH_SCOPES = ["chat:write", "channels:history", "channels:read", "groups:read", "groups:history"]
 
 

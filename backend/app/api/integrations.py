@@ -57,6 +57,11 @@ class SharedFolderRequest(BaseModel):
     folder: str = Field(..., min_length=1, max_length=1000)
 
 
+class SlackAppRequest(BaseModel):
+    client_id: str = Field(..., min_length=5, max_length=100)
+    client_secret: str = Field(..., min_length=16, max_length=200)
+
+
 class SlackAlertsRequest(BaseModel):
     channel_id: Optional[str] = Field(default=None, max_length=80)
     notify_pending: bool = True
@@ -165,6 +170,48 @@ def list_slack_channels(req: SlackChannelsRequest) -> Dict[str, Any]:
         return get_integration_service().slack_channels(req.bot_token)
     except IntegrationError as e:
         raise _bad_request(e)
+
+
+@router.put("/slack/app")
+def save_slack_app(req: SlackAppRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_slack_app(req.client_id, req.client_secret, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.delete("/slack/app")
+def remove_slack_app() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.remove_slack_app()
+    return service.describe()
+
+
+@router.post("/slack/connect", response_model=GmailConnectResponse)
+def connect_slack(req: GmailConnectRequest = GmailConnectRequest(), actor: str = Depends(current_actor)) -> GmailConnectResponse:
+    try:
+        url = get_integration_service().start_slack_connect(actor, req.return_to)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return GmailConnectResponse(authorization_url=url)
+
+
+@router.get("/slack/callback", include_in_schema=False)
+def slack_callback(
+    state: str = Query(default=""),
+    code: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+) -> RedirectResponse:
+    """Slack redirects the browser here after "Add to Slack". Public route: the single-use `state` authenticates it."""
+    fallback = config.FRONTEND_ORIGINS[0] if config.FRONTEND_ORIGINS else ""
+    try:
+        return_to, _ = get_integration_service().finish_slack_connect(state, code, error)
+        target = f"{return_to or fallback}/#/settings/slack-connected"
+    except IntegrationError as e:
+        target = f"{e.return_to or fallback}/#/settings/slack-error/{quote(e.code)}"
+    return RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.put("/slack/alerts")

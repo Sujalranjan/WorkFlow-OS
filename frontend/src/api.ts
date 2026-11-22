@@ -418,6 +418,11 @@ export interface Integrations {
     bot_in_channel: boolean | null;
     alert_channel_id: string | null;
     alert_on_pending: boolean;
+    installed_with: string | null;
+    app_configured: boolean;
+    app_client_id: string | null;
+    app_source: 'settings' | 'environment' | null;
+    redirect_uri: string;
     team: string | null;
     updated_at: string | null;
     updated_by: string | null;
@@ -522,3 +527,8 @@ export interface SystemOverview {
 export const getSystem = () => request<SystemOverview>('/api/system');
 export const saveSlackAlerts = (channel_id: string | null, notify_pending: boolean) =>
   request<Integrations>('/api/integrations/slack/alerts', { method: 'PUT', body: JSON.stringify({ channel_id, notify_pending }) });
+export const saveSlackApp = (client_id: string, client_secret: string) =>
+  request<Integrations>('/api/integrations/slack/app', { method: 'PUT', body: JSON.stringify({ client_id, client_secret }) });
+export const removeSlackApp = () => request<Integrations>('/api/integrations/slack/app', { method: 'DELETE' });
+export const startSlackConnect = () =>
+  post<{ authorization_url: string }>('/api/integrations/slack/connect', { return_to: window.location.origin });

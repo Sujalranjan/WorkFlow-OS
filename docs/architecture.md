@@ -47,6 +47,7 @@ flowchart LR
 | Automation | `trigger_service.py` | Email triggers check Gmail on an interval, incrementally: the Gmail History API says whether anything arrived since the last check, and only then is `(<query>) after:<last sync>` listed in full (paged, oldest first, at most 50 new runs per check; the rest wait for the next one). Each new message becomes one run awaiting approval. The runs table is the processed-email ledger (`UNIQUE(trigger_id, message_id)`), and approval is a single conditional update, so a run cannot execute twice. |
 | Jobs and worker | `job_queue.py`, `jobs.py`, `worker.py` | Runs, verification, approved email runs and email polling are queued as jobs and done by a worker process, never inside a web request. Postgres hands each job to exactly one worker (`FOR UPDATE SKIP LOCKED`). Workers hold a renewable lease and stop cleanly on SIGTERM. A job that may have changed an external system is never retried: if it fails or its worker dies, it is marked *needs attention* for a person. |
 | Database | `db.py`, `migrations/`, `migrate.py`, `db_import.py` | SQLAlchemy Core tables for SQLite or Postgres (`DATABASE_URL`). Alembic migrations are applied on start-up (with an advisory lock on Postgres). `db import-sqlite` moves an existing SQLite install into Postgres. |
+| Monitoring | `monitoring.py`, `alerts.py`, `api/monitoring.py` | Worker heartbeats; `/health/ready` (database, schema, live worker); token-protected Prometheus `/metrics` labelled by route template; admin System page; Slack alerts when a job needs a person, a triggered run fails or a trigger cannot check Gmail. |
 | API and UI | `backend/app/api/`, `frontend/src/` | FastAPI (OpenAPI at `/docs`); React + TypeScript dashboard: Overview, Activity, Workflows, Inbox, Automations, Runs. |
 
 ## Integrations
@@ -78,6 +79,10 @@ flowchart LR
 - **Secrets** never appear in API responses, audit records, logs or LLM prompts; tests assert this. Gmail, HubSpot and Slack credentials are stored encrypted (Fernet) in the database.
 - **Least permission**: Gmail is read-only unless an admin opts in to labeling or Sheets, and each extra Google permission is requested only for the feature that needs it. Without it the step is blocked with what to do.
 - **No replays**: work that may already have changed the CRM, Slack or files is never repeated automatically, even after a crash.
+
+## Deployment
+
+`docker-compose.prod.yml` puts Caddy in front (automatic HTTPS, one origin for dashboard and API, only ports 80/443). Security headers and a CSP are set on the API, the dashboard and at the edge; `/metrics` and API docs are not exposed. See [deployment.md](deployment.md).
 
 ## Observability
 

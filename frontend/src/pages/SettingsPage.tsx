@@ -27,6 +27,9 @@ import {
   saveSheet,
   saveSlack,
   saveSlackAlerts,
+  saveSlackApp,
+  removeSlackApp,
+  startSlackConnect,
   startGmailConnect,
   updateUser,
 } from '../api';
@@ -288,6 +291,14 @@ const ApiKeysSection: React.FC = () => {
   );
 };
 
+const SLACK_ERRORS: Record<string, string> = {
+  expired: 'That Add to Slack link expired or was already used. Try again.',
+  denied: 'The Slack installation was cancelled.',
+  exchange_failed: 'Slack did not issue a bot token. Check the app has a bot user and the redirect URL below.',
+  client_changed: 'The Slack app changed during installation. Try again.',
+  network: 'The server could not reach Slack. Try again.',
+};
+
 const GMAIL_ERRORS: Record<string, string> = {
   expired: 'That sign-in link expired or was already used. Try Connect Gmail again.',
   denied: 'Google sign-in was cancelled or access was not granted.',
@@ -316,6 +327,18 @@ const IntegrationsSection: React.FC = () => {
           Gmail connected. <button className="link" onClick={() => go('settings')}>Dismiss</button>
         </Alert>
       )}
+      {outcome === 'slack-connected' && (
+        <Alert tone="ok">
+          Slack app installed. Choose the channel below if you have not yet.{' '}
+          <button className="link" onClick={() => go('settings')}>Dismiss</button>
+        </Alert>
+      )}
+      {outcome === 'slack-error' && (
+        <Alert>
+          {SLACK_ERRORS[code || ''] || 'Adding the Slack app failed.'}{' '}
+          <button className="link" onClick={() => go('settings')}>Dismiss</button>
+        </Alert>
+      )}
       {outcome === 'gmail-error' && (
         <Alert>
           {GMAIL_ERRORS[code || ''] || 'Connecting Gmail failed.'}{' '}
@@ -334,6 +357,7 @@ const IntegrationsSection: React.FC = () => {
           <SharedFolderCard info={info.data} action={action} update={update} />
           <SheetsCard info={info.data} action={action} update={update} />
           <SlackCard info={info.data} action={action} update={update} />
+          <SlackAppCard info={info.data} action={action} update={update} />
           <SlackAlertsCard info={info.data} action={action} update={update} />
         </>
       )}
@@ -1139,6 +1163,86 @@ const SlackAlertsCard: React.FC<CardProps> = ({ info, action, update }) => {
           </button>
         </div>
       </form>
+    </div>
+  );
+};
+
+/** "Add to Slack": install the team's own Slack app instead of pasting a bot token (needs HTTPS). */
+const SlackAppCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const sl = info.slack;
+  const [clientId, setClientId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [editing, setEditing] = useState(false);
+  const busy = action.busy !== null;
+  const https = sl.redirect_uri.startsWith('https://');
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Add to Slack (optional)</h3>
+        {sl.installed_with === 'add_to_slack' ? <Badge status="completed" label="Installed" /> : null}
+      </div>
+      <p className="muted small">
+        Instead of pasting a bot token, install your team's own Slack app. Create an app at api.slack.com, add this
+        Redirect URL under OAuth &amp; Permissions, then paste its Client ID and Secret: <code>{sl.redirect_uri}</code>
+      </p>
+      {!https && <p className="muted small">Needs WorkFlowOS on HTTPS (see docs/deployment.md); until then paste a bot token above.</p>}
+      {!sl.app_configured || editing ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update(action.run('slack-app', () => saveSlackApp(clientId, secret), 'Slack app saved.')).then(() => {
+              setSecret('');
+              setEditing(false);
+            });
+          }}
+        >
+          <div className="form-row">
+            <label className="field">
+              Client ID
+              <input required value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="1234567890.1234567890" />
+            </label>
+            <label className="field">
+              Client Secret
+              <input required type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              Save app
+            </button>
+            {editing && (
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        <div className="actions">
+          <button
+            disabled={busy || !https}
+            onClick={() => action.run('slack-connect', startSlackConnect).then((res) => res && window.location.assign(res.authorization_url))}
+          >
+            {sl.installed_with === 'add_to_slack' ? 'Reinstall to Slack' : 'Add to Slack'}
+          </button>
+          {sl.app_source === 'settings' && (
+            <>
+              <button className="btn-secondary" disabled={busy} onClick={() => setEditing(true)}>
+                Change app
+              </button>
+              <button
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => update(action.run('slack-app-remove', removeSlackApp, 'Slack app removed (the installed bot keeps working).'))}
+              >
+                Remove app
+              </button>
+            </>
+          )}
+          <span className="muted small">App {sl.app_client_id}</span>
+        </div>
+      )}
     </div>
   );
 };

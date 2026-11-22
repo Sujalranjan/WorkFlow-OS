@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
-from app.config import GEMINI_API_KEY, GEMINI_MODEL, TRIGGER_POLLER_ENABLED
+from app.config import GEMINI_API_KEY, GEMINI_MODEL, TRIGGER_POLLER_ENABLED, VERSION
 
 router = APIRouter(tags=["Health"])
 
@@ -15,7 +15,7 @@ def get_health() -> dict[str, str]:
     return {
         "status": "healthy",
         "service": "workflowos-backend",
-        "version": "0.1.0",
+        "version": VERSION,
     }
 
 
