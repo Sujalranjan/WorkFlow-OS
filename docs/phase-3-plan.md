@@ -117,7 +117,12 @@ Each with executor, verifier, observation rule and tests:
   earlier message the step is BLOCKED rather than posting a new top-level message. The default reply
   lists what happened after the first message. Verified with `conversations.replies` (same
   `channels:history` scope). The extension tags sends from the thread pane as `kind: thread_reply`.
-- `sheets.append_row`: add a row to a Google Sheet (needs the Sheets scope on the Google sign-in).
+- `sheets.append_row` (**done**): add a row about the run to the one sheet an admin chose in Settings
+  (link, tab, columns from a fixed list of run facts). Opt-in (Allow Google Sheets, then Reconnect
+  Gmail requests `spreadsheets`). `values.append` with RAW + INSERT_ROWS only (no formulas, no edits);
+  a workflow recorded with another spreadsheet is BLOCKED. Observed coarsely: opening the same sheet
+  in every recorded run (the extension reports the bare document URL, so tab switches don't count).
+  Verified by reading the row back.
 - `gmail.add_label` (**done**): label the processed email. Opt-in (Settings > Gmail > Allow labeling,
   then Reconnect Gmail requests `gmail.modify`); the granted scopes are kept in the token's metadata.
   A separate `GmailLabeler`/`GmailLabelExecutor` does it, so `GmailApiClient`/`GmailApiExecutor` stay
@@ -133,9 +138,17 @@ Each with executor, verifier, observation rule and tests:
   The verifier re-hashes the copy. Also: Slack's default status message no longer needs a CRM
   customer (a Gmail -> folder -> Slack routine can report what it did).
 
-### 3f: CI, docs, live tests
-- Live tests (`@pytest.mark.live`) for HubSpot and Slack OAuth against test accounts; mocked
-  transports in the normal suite. README integration guide: "Adding an integration".
+### 3f: CI, docs, live tests (done)
+- Live tests (`tests/backend/test_live_integrations.py`, `@pytest.mark.live`, each skipped unless its
+  test-account variables are set): Slack post + thread reply + channel list, HubSpot access/search/
+  properties, Gmail user labels and Sheets metadata (read only). Slack OAuth is Phase 5. Mocked
+  transports cover everything in the normal suite.
+- The normal suite now also scrubs `HUBSPOT_ACCESS_TOKEN`, `SHARED_FOLDER_PATH`,
+  `SHARED_FOLDER_DIRECTORY` and `SECRET_KEY_PATH`, so it can never use a real account or folder.
+- CI checks the browser extension (manifest is valid JSON and lists only files that exist; every
+  script passes `node --check`).
+- README: integration guide (Settings, opt-in permissions, executor rules, fake-API and recorded-
+  routine tests) and a live-test section; `docs/architecture.md` updated for Phase 3.
 
 ## Risks
 

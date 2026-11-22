@@ -30,6 +30,7 @@ from app.services.credential_store import (
     GMAIL_TOKEN,
     HUBSPOT,
     SHARED_FOLDER,
+    SHEETS,
     SLACK,
     CredentialStore,
     get_credential_store,
@@ -114,17 +115,77 @@ class IntegrationService:
         info = self.store.info(GMAIL_OPTIONS)
         return bool(info and info.metadata.get("allow_labels"))
 
-    def set_gmail_options(self, allow_labels: bool, actor: str) -> None:
-        """Opt in to (or out of) labeling. Turning it on takes effect at the next Connect Gmail,
-        which then also asks Google for the gmail.modify permission. Turning it off stops labeling
-        at once; reconnecting afterwards removes the permission at Google."""
-        self.store.put(GMAIL_OPTIONS, {}, {"allow_labels": bool(allow_labels)}, actor)
+    def gmail_sheets_allowed(self) -> bool:
+        info = self.store.info(GMAIL_OPTIONS)
+        return bool(info and info.metadata.get("allow_sheets"))
+
+    def set_gmail_options(self, allow_labels: Optional[bool], actor: str, allow_sheets: Optional[bool] = None) -> None:
+        """Opt in to (or out of) labeling and Google Sheets. Turning one on takes effect at the next
+        Connect Gmail, which then also asks Google for that permission (gmail.modify, spreadsheets).
+        Turning it off stops it at once; reconnecting afterwards removes the permission at Google.
+        An option left as None keeps its current value."""
+        info = self.store.info(GMAIL_OPTIONS)
+        current = dict(info.metadata) if info else {}
+        if allow_labels is not None:
+            current["allow_labels"] = bool(allow_labels)
+        if allow_sheets is not None:
+            current["allow_sheets"] = bool(allow_sheets)
+        self.store.put(GMAIL_OPTIONS, {}, current, actor)
 
     def _gmail_requested_scopes(self) -> list:
         scopes = list(config.GMAIL_SCOPES)
         if self.gmail_labels_allowed():
             scopes.append(config.GMAIL_MODIFY_SCOPE)
+        if self.gmail_sheets_allowed():
+            scopes.append(config.SHEETS_SCOPE)
         return scopes
+
+    # ------------------------------------------------------------ google sheets
+
+    def save_sheet(self, spreadsheet: str, sheet: str, columns: list, actor: str, sheets_client=None) -> Dict[str, Any]:
+        """Choose the spreadsheet and tab sheets.append_row writes to, and its columns.
+        Checked with Google (needs the Sheets permission), so a typo or a sheet without access fails here."""
+        from app.services.google_sheets import COLUMNS, GoogleSheetsClient, SheetsError, parse_spreadsheet_id
+
+        spreadsheet_id = parse_spreadsheet_id(spreadsheet)
+        if not spreadsheet_id:
+            raise IntegrationError("Paste the spreadsheet's link or id (docs.google.com/spreadsheets/d/<id>/...).")
+        unknown = [c for c in columns if c not in COLUMNS]
+        if unknown or not columns:
+            raise IntegrationError(f"Choose columns from: {', '.join(COLUMNS)}.")
+        if len(set(columns)) != len(columns):
+            raise IntegrationError("Each column can be used once.")
+        client = sheets_client or GoogleSheetsClient()
+        try:
+            meta = client.spreadsheet(spreadsheet_id)
+        except SheetsError as e:
+            raise IntegrationError(str(e))
+        tabs = meta["sheets"]
+        tab = (sheet or "").strip() or tabs[0]
+        if tab not in tabs:
+            raise IntegrationError(f"The spreadsheet has no tab named '{tab}'. Tabs: {', '.join(tabs)}.")
+        metadata = {"spreadsheet_id": spreadsheet_id, "title": meta["title"], "sheet": tab, "columns": list(columns)}
+        self.store.put(SHEETS, {}, metadata, actor)
+        return metadata
+
+    def remove_sheet(self) -> None:
+        self.store.delete(SHEETS)
+
+    def _describe_sheets(self) -> Dict[str, Any]:
+        from app.services.google_sheets import COLUMNS, DEFAULT_COLUMNS
+
+        info = self.store.info(SHEETS)
+        meta = info.metadata if info else {}
+        return {
+            "configured": bool(info),
+            "spreadsheet_id": meta.get("spreadsheet_id"),
+            "title": meta.get("title"),
+            "sheet": meta.get("sheet"),
+            "columns": meta.get("columns") or list(DEFAULT_COLUMNS),
+            "available_columns": list(COLUMNS),
+            "updated_at": info.updated_at if info else None,
+            "updated_by": info.updated_by if info else None,
+        }
 
     # ---------------------------------------------------------- gmail connect
 
@@ -438,7 +499,11 @@ class IntegrationService:
                 "labels_allowed": self.gmail_labels_allowed(),
                 "can_label": bool(gmail_token)
                 and config.GMAIL_MODIFY_SCOPE in (gmail_token.metadata.get("scopes") or []),
+                "sheets_allowed": self.gmail_sheets_allowed(),
+                "can_use_sheets": bool(gmail_token)
+                and config.SHEETS_SCOPE in (gmail_token.metadata.get("scopes") or []),
             },
+            "sheets": self._describe_sheets(),
             "hubspot": self._describe_hubspot(),
             "files": self._describe_shared_folder(),
             "slack": {

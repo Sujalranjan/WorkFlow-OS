@@ -53,7 +53,17 @@ os.environ["EMBEDDED_WORKER"] = "false"
 os.environ["TRIGGER_POLLER_ENABLED"] = "false"
 
 if not LIVE_TESTS:
-    for _secret in ("GEMINI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "WORKFLOWOS_SECRET_KEY"):
+    for _secret in (
+        "GEMINI_API_KEY",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID",
+        "WORKFLOWOS_SECRET_KEY",
+        "SECRET_KEY_PATH",
+        "HUBSPOT_ACCESS_TOKEN",
+        # a real shared folder must never receive test files
+        "SHARED_FOLDER_PATH",
+        "SHARED_FOLDER_DIRECTORY",
+    ):
         os.environ.pop(_secret, None)
     os.environ["GMAIL_ENABLED"] = "false"
     # Never read the developer's real Gmail OAuth client or token from the repo root.

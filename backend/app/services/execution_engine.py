@@ -439,6 +439,10 @@ class ExecutionEngine:
                     if step_result.output.get("note_id"):
                         context.resolved_parameters["note_id"] = step_result.output.get("note_id")
 
+                elif act_norm == "append_row":
+                    if step_result.output.get("updated_range"):
+                        context.resolved_parameters["sheet_row_range"] = step_result.output.get("updated_range")
+
                 elif act_norm == "add_label":
                     if step_result.output.get("label_id"):
                         context.resolved_parameters["gmail_label"] = step_result.output.get("label")

@@ -249,6 +249,21 @@ class GmailApiClient:
             logger.error("OAuth interactive authorization failed: %s", str(e))
             raise GmailAuthenticationError(f"OAuth authorization flow failed: {str(e)}") from e
 
+    def google_credentials(self) -> Any:
+        """The saved Google sign-in as valid credentials (refreshed if needed), loaded with this
+        client's scopes. Used by other Google APIs on the same sign-in (Google Sheets)."""
+        from google.auth.transport.requests import Request
+
+        creds, source = self._load_credentials()
+        if creds is None:
+            raise GmailAuthenticationError(SIGN_IN_NEEDED)
+        if not creds.valid:
+            if not (creds.expired and creds.refresh_token):
+                raise GmailAuthenticationError(SIGN_IN_EXPIRED)
+            creds.refresh(Request())
+            self._save_credentials(creds, source)
+        return creds
+
     def get_service(self, interactive: bool = False, open_browser: bool = True) -> Any:
         """Returns the authenticated Google API Resource service object."""
         if self._injected_service is not None:

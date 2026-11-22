@@ -317,6 +317,18 @@ export interface Integrations {
     /** Opted in to labeling (Settings) / Google granted gmail.modify at the last Connect Gmail. */
     labels_allowed: boolean;
     can_label: boolean;
+    sheets_allowed: boolean;
+    can_use_sheets: boolean;
+  };
+  sheets: {
+    configured: boolean;
+    spreadsheet_id: string | null;
+    title: string | null;
+    sheet: string | null;
+    columns: string[];
+    available_columns: string[];
+    updated_at: string | null;
+    updated_by: string | null;
   };
   slack: {
     configured: boolean;
@@ -394,5 +406,8 @@ export const removeHubSpot = () => request<Integrations>('/api/integrations/hubs
 export const saveSharedFolder = (folder: string) =>
   request<Integrations>('/api/integrations/files', { method: 'PUT', body: JSON.stringify({ folder }) });
 export const removeSharedFolder = () => request<Integrations>('/api/integrations/files', { method: 'DELETE' });
-export const saveGmailOptions = (allow_labels: boolean) =>
-  request<Integrations>('/api/integrations/gmail/options', { method: 'PUT', body: JSON.stringify({ allow_labels }) });
+export const saveGmailOptions = (options: { allow_labels?: boolean; allow_sheets?: boolean }) =>
+  request<Integrations>('/api/integrations/gmail/options', { method: 'PUT', body: JSON.stringify(options) });
+export const saveSheet = (spreadsheet: string, sheet: string, columns: string[]) =>
+  request<Integrations>('/api/integrations/sheets', { method: 'PUT', body: JSON.stringify({ spreadsheet, sheet, columns }) });
+export const removeSheet = () => request<Integrations>('/api/integrations/sheets', { method: 'DELETE' });

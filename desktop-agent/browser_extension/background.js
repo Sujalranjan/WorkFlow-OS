@@ -113,10 +113,23 @@ function activityEvent(eventType, metadata) {
 
 // Gmail is a single-page app: searches change only the URL fragment.
 let lastNavigation = "";
+// Opening a Google Sheet: reported as the bare document address, so switching tabs inside the
+// spreadsheet (#gid=...) or the edit/view mode is not a second "open".
+function googleSheetUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== "docs.google.com") return null;
+    const m = u.pathname.match(/^\/spreadsheets\/d\/([A-Za-z0-9_-]{20,100})(\/|$)/);
+    return m ? `https://docs.google.com/spreadsheets/d/${m[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
 async function onNavigation(details) {
   if (details.frameId !== 0) return;
-  const url = details.url;
-  if (!(isGmailSearch(url) || isHubSpotContactPage(url) || (await isCrmPage(url)))) return;
+  const url = googleSheetUrl(details.url) || details.url;
+  if (!(isGmailSearch(url) || isHubSpotContactPage(url) || googleSheetUrl(url) || (await isCrmPage(url)))) return;
   if (url === lastNavigation) return; // the same route fires several webNavigation events
   lastNavigation = url;
   await post(activityEvent("browser_navigation", { url }));

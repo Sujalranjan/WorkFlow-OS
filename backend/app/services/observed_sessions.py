@@ -219,3 +219,25 @@ def build_observed_label_events(start: datetime = datetime(2026, 11, 18, 9, 0, t
     for i, s in enumerate(SESSIONS):
         events.extend(build_label_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
     return events
+
+
+LOG_SPREADSHEET_ID = "1WfOsLogSheet0000000000000000000000000000ab"
+
+
+def build_sheet_session_events(start: datetime, invoice: str, msg: str) -> List[ActivityEvent]:
+    """Gmail attachment -> open the team's log sheet (a row is typed there) -> Slack."""
+    session = build_folder_session_events(start, invoice, msg)
+    opened = _event(
+        session[3].timestamp + timedelta(seconds=3),
+        ActivityEventType.BROWSER_NAVIGATION,
+        "Google Chrome",
+        url=f"https://docs.google.com/spreadsheets/d/{LOG_SPREADSHEET_ID}",
+    )
+    return session[:4] + [opened] + session[5:]
+
+
+def build_observed_sheet_events(start: datetime = datetime(2026, 11, 20, 9, 0, tzinfo=timezone.utc)) -> List[ActivityEvent]:
+    events: List[ActivityEvent] = []
+    for i, s in enumerate(SESSIONS):
+        events.extend(build_sheet_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
+    return events

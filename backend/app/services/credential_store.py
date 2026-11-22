@@ -32,7 +32,8 @@ GMAIL_TOKEN = "gmail"
 GMAIL_OAUTH_CLIENT = "gmail_oauth_client"
 SLACK = "slack"
 HUBSPOT = "hubspot"
-GMAIL_OPTIONS = "gmail_options"  # non-secret: {"allow_labels": bool}
+GMAIL_OPTIONS = "gmail_options"  # non-secret: {"allow_labels": bool, "allow_sheets": bool}
+SHEETS = "sheets"  # non-secret: {"spreadsheet_id", "title", "sheet", "columns"}
 SHARED_FOLDER = "files"  # non-secret: only metadata {"folder"}
 OAUTH_STATE_TTL = timedelta(minutes=10)
 

@@ -43,7 +43,14 @@ class SlackSettingsRequest(BaseModel):
 
 
 class GmailOptionsRequest(BaseModel):
-    allow_labels: bool
+    allow_labels: Optional[bool] = None
+    allow_sheets: Optional[bool] = None
+
+
+class SheetRequest(BaseModel):
+    spreadsheet: str = Field(..., min_length=10, max_length=500)  # link or id
+    sheet: str = Field(default="", max_length=100)
+    columns: List[str] = Field(..., min_length=1, max_length=20)
 
 
 class SharedFolderRequest(BaseModel):
@@ -109,7 +116,24 @@ def gmail_callback(
 @router.put("/gmail/options")
 def save_gmail_options(req: GmailOptionsRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
     service = get_integration_service()
-    service.set_gmail_options(req.allow_labels, actor)
+    service.set_gmail_options(req.allow_labels, actor, allow_sheets=req.allow_sheets)
+    return service.describe()
+
+
+@router.put("/sheets")
+def save_sheet(req: SheetRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_sheet(req.spreadsheet, req.sheet, req.columns, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.delete("/sheets")
+def remove_sheet() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.remove_sheet()
     return service.describe()
 
 

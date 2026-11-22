@@ -32,6 +32,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 | `hubspot.update_contact` | property saved on a HubSpot contact record | HubSpotApiExecutor | high, confirmation required |
 | `hubspot.add_note` | note saved on a HubSpot contact record | HubSpotApiExecutor | medium |
 | `files.save_to_folder` | file saved into the shared folder the desktop agent watches | SharedFolderExecutor | medium, never overwrites |
+| `sheets.append_row` | the same Google Sheet opened in each recorded run | GoogleSheetsExecutor (opt-in, the sheet chosen in Settings) | medium, appends only |
 | `slack.send_notification` | message sent in `app.slack.com/client/<team>/<channel>` | SlackApiExecutor | medium |
 | `slack.reply_in_thread` | message sent from a thread's reply box | SlackApiExecutor (under this run's own message) | medium |
 
@@ -161,6 +162,7 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
 | Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
 | Gmail labeling (optional) | **Settings > Integrations > Gmail > Allow labeling**, then **Reconnect Gmail** | Adds the `gmail.modify` permission, used only to *add* labels you created to processed emails. Off by default |
+| Google Sheets (optional) | **Settings > Integrations > Gmail > Allow Google Sheets**, then **Reconnect Gmail**, then **Google Sheets**: paste the sheet's link, pick the tab and columns | Adds the `spreadsheets` permission. Each run appends one row (plain text, never formulas) to that one sheet; existing cells are never changed. A workflow recorded with a different sheet is blocked |
 | Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification). Add `channels:read` (and `groups:read` for private channels) to pick the channel from a list; without them, type the channel ID. Settings warns when the bot is not in the chosen channel. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | HubSpot | **Settings > Integrations > HubSpot** | Service key with `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read`; then choose the contact property that "Update contact" writes. `HUBSPOT_ACCESS_TOKEN` works as a fallback |
 | Shared folder | **Settings > Integrations > Shared folder** | A folder on the WorkFlowOS server (with Docker, mount it into the `api` and `worker` containers). `SHARED_FOLDER_PATH` works as a fallback. Set `SHARED_FOLDER_DIRECTORY` for the desktop agent so saving files there is observed |
@@ -198,6 +200,20 @@ Each test session uses a throwaway database, CRM database and sandbox, and strip
 
 The observation-to-execution bridge is covered by [tests/backend/test_observed_to_execution.py](tests/backend/test_observed_to_execution.py) and [tests/backend/test_observed_to_execution_api.py](tests/backend/test_observed_to_execution_api.py). They feed recorded browser sessions through the whole pipeline, check that the discovered workflow matches the reference spec in [reference_workflow.py](backend/app/services/reference_workflow.py), and then execute and verify it.
 
+### Live tests (real accounts, off by default)
+
+`python -m pytest tests -q` never calls a real service: secrets and Phase 3 settings are scrubbed from the environment. To check the integrations against real test accounts, set the variables below (in `.env` or the shell) and run with `WORKFLOWOS_LIVE_TESTS=1`. Each test is skipped when its variables are missing, and the live tests only read, except the Slack ones, which post a message and a thread reply to the given channel.
+
+| Test | Variables |
+|---|---|
+| Slack post, thread reply, channel list | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` (a test channel) |
+| HubSpot access, contact search, properties | `HUBSPOT_ACCESS_TOKEN`, optional `WORKFLOWOS_LIVE_HUBSPOT_EMAIL` (a contact that exists) |
+| Gmail labels and Google Sheets metadata | `WORKFLOWOS_LIVE_GOOGLE_TOKEN` (an authorized-user JSON file granted the opt-in scopes), optional `WORKFLOWOS_LIVE_SHEET_ID` |
+
+```powershell
+$env:PYTHONPATH=".;backend;desktop-agent"; $env:WORKFLOWOS_LIVE_TESTS="1"; python -m pytest tests -q -m live
+```
+
 ## Database and migrations
 
 WorkFlowOS uses SQLite by default (`DATABASE_PATH`, default `workflowos.db`). Set `DATABASE_URL` to use Postgres instead (`postgresql+psycopg://user:password@host:5432/db`).
@@ -221,13 +237,15 @@ alembic revision --autogenerate -m "describe the change"
 
 ## Adding an integration or an action
 
-Each external tool is one module in [backend/app/integrations](backend/app/integrations) (see `gmail.py`, `demo_crm.py`, `slack.py`). The action catalog, the event classifier, the executor and verifier registries, `/api/status` and the dashboard's connection list are all built from these modules.
+Each external tool is one module in [backend/app/integrations](backend/app/integrations) (see `gmail.py`, `demo_crm.py`, `hubspot.py`, `files.py`, `google_sheets.py`, `slack.py`). The action catalog, the event classifier, the executor and verifier registries, `/api/status` and the dashboard's connection list are all built from these modules.
 
 1. **Actions:** declare a `CatalogAction` for each thing the tool can do. Give it an id `<integration key>.<action>`, its executor's name, a risk level, parameters and outputs.
 2. **Recognising it:** write a classifier that recognises the action in observed activity (URL pattern, download source or form submit), returning `None` for anything else.
 3. **Doing and checking it:** add factories for the executor, which must declare each action in `supported_actions`, and for a read-only verifier. If later steps need the action's outputs, map them to context keys in `ExecutionEngine`.
 4. **Status:** add a status check, which returns whether the tool is connected plus a hint and never credentials. Then add the module to `INTEGRATIONS` in `app/integrations/__init__.py`.
-5. **Tests:** add classification and execution tests. `tests/backend/test_integrations_framework.py` then checks the new module automatically: namespaced action ids, exact executor routing, registry membership, and classifiers that don't overlap.
+5. **Settings:** credentials go in the encrypted credential store (`credential_store.py`); non-secret choices (a channel, a property, a folder, a sheet) go in a record's metadata. Add admin-only routes in `api/integrations.py`, list them in `ROUTE_POLICY` (`security.py`), and a card in `frontend/src/pages/SettingsPage.tsx`. A permission that is not always needed is opt-in: request it only after an admin allows it, and block the step (with what to do) until it is granted.
+6. **Rules every executor follows:** a dry run makes no external call; missing setup or permission is `BLOCKED` before anything changes; values that differ per run come from upstream outputs (`{message_id}`, `{slack_ts}`), never from a recording; ambiguous lookups return `NEEDS_INPUT`.
+7. **Tests:** add classification and execution tests against a fake of the tool's API (see `test_hubspot.py`), plus a recorded routine in `services/observed_sessions.py` that is discovered and run end to end. `tests/backend/test_integrations_framework.py` then checks the new module automatically: namespaced action ids, exact executor routing, registry membership, and classifiers that don't overlap. Tests that need a real account are marked `@pytest.mark.live` (see below).
 
 More detail: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).
 

@@ -16,6 +16,7 @@ import {
   removeGmailClient,
   removeHubSpot,
   removeSharedFolder,
+  removeSheet,
   removeSlack,
   revokeApiKey,
   saveGmailClient,
@@ -23,6 +24,7 @@ import {
   saveHubSpot,
   saveHubSpotSettings,
   saveSharedFolder,
+  saveSheet,
   saveSlack,
   startGmailConnect,
   updateUser,
@@ -329,6 +331,7 @@ const IntegrationsSection: React.FC = () => {
           <GmailCard info={info.data} action={action} update={update} />
           <HubSpotCard info={info.data} action={action} update={update} />
           <SharedFolderCard info={info.data} action={action} update={update} />
+          <SheetsCard info={info.data} action={action} update={update} />
           <SlackCard info={info.data} action={action} update={update} />
         </>
       )}
@@ -469,7 +472,7 @@ const GmailCard: React.FC<CardProps> = ({ info, action, update }) => {
               update(
                 action.run(
                   'gmail-options',
-                  () => saveGmailOptions(on),
+                  () => saveGmailOptions({ allow_labels: on }),
                   on
                     ? 'Labeling allowed. Click Reconnect Gmail and allow the extra permission.'
                     : 'Labeling turned off. Reconnect Gmail to also remove the permission at Google.'
@@ -490,6 +493,37 @@ const GmailCard: React.FC<CardProps> = ({ info, action, update }) => {
             </>
           )}
           {g.labels_allowed && g.can_label && ' Labeling is ready.'}
+        </p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={g.sheets_allowed}
+            disabled={busy}
+            onChange={(e) => {
+              const on = e.target.checked;
+              update(
+                action.run(
+                  'gmail-options',
+                  () => saveGmailOptions({ allow_sheets: on }),
+                  on
+                    ? 'Google Sheets allowed. Click Reconnect Gmail and allow the extra permission.'
+                    : 'Google Sheets turned off. Reconnect Gmail to also remove the permission at Google.'
+                )
+              );
+            }}
+          />{' '}
+          Allow Google Sheets (log runs as rows)
+        </label>
+        <p className="muted small">
+          When on, the next Connect Gmail also asks Google for <code>spreadsheets</code>. WorkFlowOS only appends rows to the
+          one sheet chosen below, never edits existing cells.
+          {g.sheets_allowed && g.connected && !g.can_use_sheets && (
+            <>
+              {' '}
+              <strong>Reconnect Gmail to grant it.</strong>
+            </>
+          )}
+          {g.sheets_allowed && g.can_use_sheets && ' Google Sheets is ready.'}
         </p>
       </div>
     </div>
@@ -927,6 +961,135 @@ const SharedFolderCard: React.FC<CardProps> = ({ info, action, update }) => {
             </button>
           )}
         </div>
+      )}
+    </div>
+  );
+};
+
+const SHEET_COLUMN_LABELS: Record<string, string> = {
+  date: 'Date',
+  email_subject: 'Email subject',
+  customer_email: 'Sender / customer email',
+  customer_name: 'Customer name',
+  filename: 'Attachment',
+  saved_file_name: 'Shared-folder file name',
+  customer_status: 'CRM status',
+  execution_id: 'Run id',
+  workflow_id: 'Workflow id',
+};
+
+const SheetsCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const sh = info.sheets;
+  const ready = info.gmail.sheets_allowed && info.gmail.can_use_sheets;
+  const [editing, setEditing] = useState(false);
+  const [link, setLink] = useState('');
+  const [tab, setTab] = useState('');
+  const [columns, setColumns] = useState<string[]>(sh.columns);
+  const busy = action.busy !== null;
+  const showForm = ready && (!sh.configured || editing);
+
+  const toggle = (col: string) =>
+    setColumns((cur) => (cur.includes(col) ? cur.filter((c) => c !== col) : [...cur, col]));
+
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Google Sheets</h3>
+        {sh.configured && ready ? (
+          <Badge status="completed" label="Ready" />
+        ) : sh.configured ? (
+          <Badge status="paused" label="Needs permission" />
+        ) : (
+          <Badge status="paused" label="Not set up" />
+        )}
+      </div>
+      {!ready && (
+        <p className="muted small">
+          Turn on <strong>Allow Google Sheets</strong> in the Gmail section above and reconnect Gmail first.
+        </p>
+      )}
+      {sh.configured && (
+        <p className="muted small">
+          Adding rows to <strong>{sh.title}</strong> › <code>{sh.sheet}</code> with columns{' '}
+          {sh.columns.map((c) => SHEET_COLUMN_LABELS[c] || c).join(', ')} · chosen by {sh.updated_by || 'unknown'}{' '}
+          {timeAgo(sh.updated_at)}
+        </p>
+      )}
+      {showForm ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update(action.run('sheets-save', () => saveSheet(link, tab, columns), 'Google Sheet checked and saved.')).then(() =>
+              setEditing(false)
+            );
+          }}
+        >
+          <p className="muted small">
+            Each run adds one row at the bottom of this tab. Values are written as plain text (never formulas). Put your own
+            header row in the sheet; the columns below are written in the order you tick them.
+          </p>
+          <div className="form-row">
+            <label className="field">
+              Spreadsheet link
+              <input required value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…" />
+            </label>
+            <label className="field">
+              Tab (optional)
+              <input value={tab} onChange={(e) => setTab(e.target.value)} placeholder="First tab" />
+            </label>
+          </div>
+          <div className="field">
+            Columns
+            {sh.available_columns.map((col) => (
+              <label key={col} className="checkbox">
+                <input type="checkbox" checked={columns.includes(col)} onChange={() => toggle(col)} />{' '}
+                {SHEET_COLUMN_LABELS[col] || col}
+                {columns.includes(col) && <span className="muted small"> (column {columns.indexOf(col) + 1})</span>}
+              </label>
+            ))}
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={busy || columns.length === 0}>
+              Check and save
+            </button>
+            {editing && (
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        sh.configured && (
+          <div className="actions">
+            {ready && (
+              <button
+                className="btn-secondary"
+                disabled={busy}
+                onClick={() => {
+                  setLink(sh.spreadsheet_id ? `https://docs.google.com/spreadsheets/d/${sh.spreadsheet_id}` : '');
+                  setTab(sh.sheet || '');
+                  setColumns(sh.columns);
+                  setEditing(true);
+                }}
+              >
+                Change
+              </button>
+            )}
+            <button
+              className="btn-danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Stop logging runs to this sheet? "Add a row" steps are blocked until a sheet is chosen again.')) {
+                  update(action.run('sheets-remove', removeSheet, 'Google Sheet cleared.'));
+                }
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )
       )}
     </div>
   );
