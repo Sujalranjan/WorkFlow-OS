@@ -74,6 +74,20 @@ canonical_workflows = Table(
     Column("spec_json", Document, nullable=False),
 )
 
+# Every saved version of a workflow (the editor's history). The current version is also in
+# canonical_workflows; rows here are never changed or deleted.
+workflow_versions = Table(
+    "workflow_versions",
+    metadata,
+    Column("workflow_id", Text, primary_key=True),
+    Column("version", Text, primary_key=True),
+    Column("created_at", Text, nullable=False),
+    Column("created_by", Text),
+    Column("note", Text),
+    Column("changes", Document, nullable=False),
+    Column("spec_json", Document, nullable=False),
+)
+
 execution_plans = Table(
     "execution_plans",
     metadata,

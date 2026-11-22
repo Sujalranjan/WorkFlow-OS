@@ -33,7 +33,7 @@ FIND_CONTACT = CatalogAction(
     parameters=(
         CatalogParameter("contact_query", "Contact email or search text", upstream_template="{customer_email}"),
     ),
-    produces=("contact_id", "contact_name", "contact_email"),
+    produces=("contact_id", "contact_name", "contact_email", "customer_name", "customer_email"),
 )
 
 UPDATE_CONTACT = CatalogAction(
@@ -52,6 +52,7 @@ UPDATE_CONTACT = CatalogAction(
         CatalogParameter("property_value", "Value to write (default: from Settings)", required=False),
     ),
     produces=("hubspot_updated",),
+    requires=("contact_id",),
 )
 
 ADD_NOTE = CatalogAction(
@@ -66,6 +67,7 @@ ADD_NOTE = CatalogAction(
     risk_reason="Adds a note to a HubSpot record (does not change existing data).",
     parameters=(CatalogParameter("note_body", "Note text (default: names the processed email)", required=False),),
     produces=("note_id",),
+    requires=("contact_id",),
 )
 
 

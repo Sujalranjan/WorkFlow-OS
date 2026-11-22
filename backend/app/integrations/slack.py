@@ -27,7 +27,7 @@ SEND_NOTIFICATION = CatalogAction(
     risk_category=RiskCategory.COMMUNICATION,
     risk_reason="Sends a message to a team channel.",
     parameters=(CatalogParameter("channel", "Slack channel id (defaults to SLACK_CHANNEL_ID)", required=False),),
-    produces=("slack_ts",),
+    produces=("slack_ts", "slack_channel"),
 )
 
 
@@ -43,6 +43,7 @@ REPLY_IN_THREAD = CatalogAction(
     risk_reason="Sends a threaded reply in a team channel.",
     parameters=(CatalogParameter("thread_ts", "The message to reply under (posted earlier in this run)", upstream_template="{slack_ts}"),),
     produces=("slack_reply_ts",),
+    requires=("slack_ts",),
 )
 
 

@@ -31,6 +31,7 @@ SAVE_TO_FOLDER = CatalogAction(
         ),
     ),
     produces=("saved_file", "saved_file_name"),
+    requires=("downloaded_file",),
 )
 
 

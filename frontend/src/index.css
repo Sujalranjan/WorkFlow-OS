@@ -421,7 +421,8 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   font: inherit;
   font-size: 0.9rem;
   padding: 0.5rem 0.65rem;
@@ -1122,5 +1123,91 @@ a.row-link:hover .row-title {
   .plan-steps li .badge {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+/* --- workflow editor ------------------------------------------------------- */
+
+.btn-small {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  min-width: 2rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.editor-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.editor-step {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.editor-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.editor-step-title {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.editor-step-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.editor-params {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-left: 2rem;
+}
+
+.editor-param-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) 1fr;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history li ul {
+  margin: 0.25rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .editor-params {
+    padding-left: 0;
+  }
+  .editor-param-row {
+    grid-template-columns: 1fr;
   }
 }

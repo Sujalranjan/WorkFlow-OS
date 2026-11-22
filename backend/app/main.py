@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.canonical import router as canonical_router
+from app.api.catalog import router as catalog_router
 from app.api.crm import router as crm_router
 from app.api.demo import router as demo_router
 from app.api.discovery import router as discovery_router
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(dna_router)
     app.include_router(semantic_router)
     app.include_router(canonical_router)
+    app.include_router(catalog_router)
     app.include_router(crm_router)
     app.include_router(execution_router)
     app.include_router(learning_router)

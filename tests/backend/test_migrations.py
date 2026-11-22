@@ -97,8 +97,16 @@ def test_jobs_migration_upgrades_and_downgrades(tmp_path):
     target = _fresh(tmp_path)
     migrate.upgrade(target, revision="0001")
     assert "jobs" not in inspect(db.get_engine(target, create_tables=False)).get_table_names()
-    assert migrate.upgrade(target) == "0002"
+    assert migrate.upgrade(target, revision="0002") == "0002"
     assert "jobs" in inspect(db.get_engine(target, create_tables=False)).get_table_names()
+
+
+def test_workflow_versions_migration(tmp_path):
+    target = _fresh(tmp_path)
+    migrate.upgrade(target, revision="0002")
+    assert "workflow_versions" not in inspect(db.get_engine(target, create_tables=False)).get_table_names()
+    assert migrate.upgrade(target) == "0003"
+    assert "workflow_versions" in inspect(db.get_engine(target, create_tables=False)).get_table_names()
     assert migrate.pending_changes(target) == []
 
 

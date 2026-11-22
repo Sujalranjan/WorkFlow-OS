@@ -11,6 +11,7 @@ import {
   verifyExecution,
 } from '../api';
 import { RunSteps } from '../components/RunSteps';
+import { VersionHistory, WorkflowEditor } from '../components/WorkflowEditor';
 import { CanonicalWorkflowSpec } from '../types/canonical';
 import { DryRunResult, ExecutionAuditRecord, ExecutionPlan, VerificationResult } from '../types/execution';
 import {
@@ -34,6 +35,7 @@ export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowI
   const wf = useLoad(() => getWorkflow(workflowId), [workflowId]);
   const { can } = useSession();
   const action = useAction();
+  const [editing, setEditing] = useState(false);
 
   if (wf.loading && !wf.data) return <Loading />;
   if (wf.error || !wf.data) {
@@ -61,21 +63,41 @@ export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowI
       <PageHeader
         title={spec.title}
         subtitle={spec.description || spec.intent}
-        actions={<Badge status={state} />}
+        actions={
+          <>
+            <span className="muted small">Version {spec.version}</span> <Badge status={state} />{' '}
+            {!editing && state !== 'rejected' && can(CAN.reviewWorkflow) && (
+              <button className="btn-secondary" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+            )}
+          </>
+        }
       />
       {action.error && <Alert>{action.error}</Alert>}
       {action.notice && <Alert tone="ok">{action.notice}</Alert>}
 
-      {(state === 'requires_review' || state === 'draft') && can(CAN.reviewWorkflow) && (
+      {editing && (
+        <WorkflowEditor
+          workflowId={spec.workflow_id}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            wf.reload();
+          }}
+        />
+      )}
+
+      {!editing && (state === 'requires_review' || state === 'draft') && can(CAN.reviewWorkflow) && (
         <ReviewPanel
           busy={action.busy}
           onApprove={() =>
-            action.run('approve', () => approveWorkflow(spec.workflow_id), 'Approved. You can now run it.').then(
+            action.run('approve', () => approveWorkflow(spec.workflow_id, spec.version), `Version ${spec.version} approved. You can now run it.`).then(
               () => wf.reload(),
             )
           }
           onReject={(reason) =>
-            action.run('reject', () => rejectWorkflow(spec.workflow_id, reason), 'Rejected.').then(() =>
+            action.run('reject', () => rejectWorkflow(spec.workflow_id, reason, spec.version), 'Rejected.').then(() =>
               wf.reload(),
             )
           }
@@ -144,7 +166,8 @@ export const WorkflowDetailPage: React.FC<{ workflowId: string }> = ({ workflowI
         </section>
       )}
 
-      {state === 'approved' && can(CAN.runWorkflow) && <RunPanel spec={spec} />}
+      <VersionHistory workflowId={spec.workflow_id} reloadKey={`${spec.version}-${spec.updated_at}`} />
+      {state === 'approved' && !editing && can(CAN.runWorkflow) && <RunPanel spec={spec} />}
       {state === 'approved' && <ReliabilityPanel workflowId={spec.workflow_id} />}
     </>
   );
@@ -161,8 +184,8 @@ const ReviewPanel: React.FC<{
     <section className="card card-highlight">
       <h2>Review this workflow</h2>
       <p className="muted">
-        Check the steps below. Approving lets it run when someone starts it or an email trigger picks up a matching
-        email; every live run still needs a confirmation.
+        Check the steps below (and, for an edited workflow, what changed in the version history). Approving lets it run
+        when someone starts it or an email trigger picks up a matching email; every live run still needs a confirmation.
       </p>
       {rejecting ? (
         <div className="inline-form">
@@ -196,13 +219,24 @@ const ReviewPanel: React.FC<{
 const RunPanel: React.FC<{ spec: CanonicalWorkflowSpec }> = ({ spec }) => {
   const action = useAction();
   const searchStep = spec.steps.find((s) => s.catalog_action === 'gmail.search_email');
-  const observedQuery = spec.variables.find((v) => v.semantic_name === 'search_query')?.observed_values[0] || '';
+  const fixedSearch = searchStep?.parameters?.search_query?.mode === 'fixed' ? searchStep.parameters.search_query.value || '' : null;
+  const observedQuery =
+    fixedSearch ?? spec.variables.find((v) => v.semantic_name === 'search_query')?.observed_values[0] ?? '';
   const [query, setQuery] = useState(observedQuery);
+  // Inputs the workflow editor set to "ask when the run starts"
+  const askAtRun = spec.steps.flatMap((s) =>
+    Object.entries(s.parameters || {})
+      .filter(([, c]) => c.mode === 'runtime')
+      .map(([name]) => ({ key: `${s.canonical_step_id}.${name}`, name, step: actionLabel(s.action, s.application) })),
+  );
+  const [runInputs, setRunInputs] = useState<Record<string, string>>({});
   const [dryRun, setDryRun] = useState<{ plan: ExecutionPlan; result: DryRunResult } | null>(null);
   const [record, setRecord] = useState<ExecutionAuditRecord | null>(null);
   const [verification, setVerification] = useState<VerificationResult | null>(null);
 
-  const inputs = searchStep && query.trim() ? { search_query: query.trim() } : undefined;
+  const filled = Object.fromEntries(Object.entries(runInputs).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
+  const inputs: Record<string, string> = { ...filled };
+  if (searchStep && fixedSearch === null && query.trim()) inputs.search_query = query.trim();
   const changes = spec.steps.filter((s) => s.catalog_action && s.risk.risk_category !== 'read_only');
 
   const testRun = () =>
@@ -231,7 +265,18 @@ const RunPanel: React.FC<{ spec: CanonicalWorkflowSpec }> = ({ spec }) => {
         <h2>Run it</h2>
         <a href={href('automations', spec.workflow_id)}>Start it from new emails →</a>
       </div>
-      {searchStep && (
+      {searchStep && fixedSearch !== null && (
+        <p className="muted small">
+          Gmail search: <code>{fixedSearch}</code> (fixed in the workflow; edit the workflow to change it)
+        </p>
+      )}
+      {askAtRun.map((f) => (
+        <label key={f.key} className="field">
+          {f.name.replace(/_/g, ' ')} <span className="muted small">for “{f.step}”</span>
+          <input value={runInputs[f.key] || ''} onChange={(e) => setRunInputs((cur) => ({ ...cur, [f.key]: e.target.value }))} />
+        </label>
+      ))}
+      {searchStep && fixedSearch === null && (
         <label className="field">
           Which email? (Gmail search)
           <input value={query} placeholder='subject:"Customer Replacement Request" has:attachment' onChange={(e) => setQuery(e.target.value)} />

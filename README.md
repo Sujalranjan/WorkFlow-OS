@@ -124,13 +124,19 @@ Open `http://localhost:5173`. The sidebar follows the life of a workflow:
 |---|---|
 | **Overview** | See which integrations are connected, a getting-started checklist, and anything waiting for you. |
 | **Activity** | See what was recorded. Under *Repeated routines*, click **Create workflow** on a routine (e.g. *Gmail → CRM → Slack, seen 3 times*). |
-| **Workflows** | Review each step and what it changes, then **Approve** or **Reject**. An approved workflow can be tried with **Test run** (changes nothing) or run with **Run now**. Its reliability appears after it has run. |
+| **Workflows** | Review each step and what it changes, then **Approve** or **Reject**. An approved workflow can be tried with **Test run** (changes nothing) or run with **Run now**. Its reliability appears after it has run. **Edit** (approvers) changes the steps and where each input comes from; see below. |
 | **Inbox** | Approve emails picked up by a trigger, and answer runs that paused (for example, choose which CRM customer an email is about). |
 | **Automations** | Create email triggers that start a workflow when a matching email arrives. |
 | **Runs** | Every run, step by step, and whether the result was verified afterwards. |
 | **Settings** (admins) | Add people and set their role; create and revoke API keys for the agent and extension. |
 
-**Roles:** *viewers* see everything; *approvers* can also create, approve and run workflows and answer paused runs; *admins* can also manage email triggers, users and API keys. Approvals and runs record who did them.
+### Editing a workflow
+
+On a workflow's page, **Edit** lets an approver remove, reorder or add steps (any catalog action, also one that was never recorded, such as *label the processed email*) and choose where each input comes from: **from an earlier step** of the same run, a **fixed value**, or **ask when the run starts**. The server checks every change against the action catalog as you type: a step cannot come before the step that provides what it needs (for example *reply in thread* before *post to Slack*), and a value that changed between recorded runs (like a customer's email) cannot be fixed to one of those recorded values.
+
+Saving creates a new version (1.0.0 → 1.1.0) with your note and a list of what changed, and sends the workflow back for approval: nothing runs, manually or from an email trigger, until someone approves the new version. Earlier versions are kept in the version history, a reviewer always approves the exact version they looked at, and plans made from an older version can no longer run. Details: [docs/phase-4-plan.md](docs/phase-4-plan.md).
+
+**Roles:** *viewers* see everything; *approvers* can also create, edit, approve and run workflows and answer paused runs; *admins* can also manage email triggers, users and API keys. Approvals and runs record who did them.
 
 Without `GEMINI_API_KEY`, routines are described by built-in rules from what was observed; with a key, Gemini writes the description and its output is checked against the observation before use.
 

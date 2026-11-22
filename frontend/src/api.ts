@@ -42,7 +42,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      if (body.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+      if (body.detail) {
+        detail =
+          typeof body.detail === 'string' ? body.detail : body.detail.message || JSON.stringify(body.detail);
+      }
     } catch {
       detail = res.statusText || detail;
     }
@@ -113,11 +116,87 @@ export const listWorkflows = () =>
 export const getWorkflow = (id: string) =>
   request<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}`);
 
-export const approveWorkflow = (id: string) =>
-  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/approve`, {});
+/** `version` is the version the reviewer looked at; the server refuses if the workflow changed since. */
+export const approveWorkflow = (id: string, version: string) =>
+  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/approve`, { version });
 
-export const rejectWorkflow = (id: string, reason: string) =>
-  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/reject`, { reason });
+export const rejectWorkflow = (id: string, reason: string, version: string) =>
+  post<CanonicalWorkflowSpec>(`/api/workflows/specifications/${encodeURIComponent(id)}/reject`, { reason, version });
+
+// --- workflow editor ----------------------------------------------------------------
+
+export type ParameterMode = 'upstream' | 'fixed' | 'runtime';
+export interface StepParameter {
+  mode: ParameterMode;
+  value?: string | null;
+}
+export interface EditorStep {
+  step_id?: string | null;
+  catalog_action: string;
+  parameters: Record<string, StepParameter>;
+}
+export interface WorkflowDefinitionView {
+  workflow_id: string;
+  version: string;
+  approval_state: string;
+  title: string;
+  description: string;
+  steps: EditorStep[];
+  context_steps: { step_id: string; application: string; description: string }[];
+}
+export interface CatalogParameterInfo {
+  name: string;
+  description: string;
+  required: boolean;
+  default_upstream: string | null;
+}
+export interface CatalogActionInfo {
+  action_id: string;
+  application: string;
+  action: string;
+  description: string;
+  risk_level: string;
+  risk_reason: string;
+  requires_confirmation: boolean;
+  parameters: CatalogParameterInfo[];
+  produces: string[];
+  requires: string[];
+}
+export interface CatalogGroup {
+  key: string;
+  name: string;
+  actions: CatalogActionInfo[];
+}
+export interface EditorIssue {
+  level: 'error' | 'warning';
+  message: string;
+  step: number | null;
+  parameter: string | null;
+}
+export interface WorkflowDefinitionInput {
+  base_version: string;
+  title: string;
+  description: string;
+  steps: EditorStep[];
+  note?: string;
+}
+export interface WorkflowVersionInfo {
+  version: string;
+  created_at: string;
+  created_by: string | null;
+  note: string | null;
+  changes: { kind: string; text: string }[];
+}
+
+const wfPath = (id: string) => `/api/workflows/specifications/${encodeURIComponent(id)}`;
+export const getCatalog = () => request<CatalogGroup[]>('/api/catalog');
+export const getWorkflowDefinition = (id: string) => request<WorkflowDefinitionView>(`${wfPath(id)}/definition`);
+export const validateWorkflowDefinition = (id: string, d: WorkflowDefinitionInput) =>
+  post<{ valid: boolean; issues: EditorIssue[] }>(`${wfPath(id)}/definition/validate`, d);
+export const saveWorkflowDefinition = (id: string, d: WorkflowDefinitionInput) =>
+  request<CanonicalWorkflowSpec>(`${wfPath(id)}/definition`, { method: 'PUT', body: JSON.stringify(d) });
+export const listWorkflowVersions = (id: string) =>
+  request<{ current_version: string; versions: WorkflowVersionInfo[] }>(`${wfPath(id)}/versions`);
 
 export const planWorkflow = (id: string, runtimeParameters?: Record<string, string>) =>
   post<ExecutionPlan>(`/api/workflows/specifications/${encodeURIComponent(id)}/execution-plan`, {

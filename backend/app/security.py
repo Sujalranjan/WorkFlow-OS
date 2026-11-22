@@ -82,6 +82,12 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("POST", "/api/workflows/specifications/{workflow_id}/approve"): A,
     ("POST", "/api/workflows/specifications/{workflow_id}/reject"): A,
     ("PATCH", "/api/workflows/specifications/{workflow_id}/parameters"): A,
+    ("GET", "/api/workflows/specifications/{workflow_id}/definition"): V,
+    ("POST", "/api/workflows/specifications/{workflow_id}/definition/validate"): A,
+    ("PUT", "/api/workflows/specifications/{workflow_id}/definition"): A,
+    ("GET", "/api/workflows/specifications/{workflow_id}/versions"): V,
+    ("GET", "/api/workflows/specifications/{workflow_id}/versions/{version}"): V,
+    ("GET", "/api/catalog"): V,
     # in-process copy of the Demo CRM API
     ("GET", "/api/crm/health"): V,
     ("GET", "/api/crm/customers"): V,

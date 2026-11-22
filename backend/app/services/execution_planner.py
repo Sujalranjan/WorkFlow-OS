@@ -238,6 +238,65 @@ class ExecutionPlanner:
                 params[p.name] = None
         return params
 
+    @staticmethod
+    def _edited_step_parameters(
+        catalog: CatalogAction, step: CanonicalStep, runtime_inputs: Dict[str, str]
+    ) -> Dict[str, Optional[str]]:
+        """Parameters of a step set in the workflow editor. A fixed value is what the approver saw
+        and is never overridden at run time; a run-time input fills only 'ask at run time' inputs and
+        optional inputs left out (e.g. the message id an email trigger supplies)."""
+        from app.models.canonical import StepParameterMode
+
+        params: Dict[str, Optional[str]] = {}
+        choices = step.parameters or {}
+        for p in catalog.parameters:
+            choice = choices.get(p.name)
+            runtime = runtime_inputs.get(f"{step.canonical_step_id}.{p.name}") or runtime_inputs.get(p.name)
+            runtime = str(runtime).strip() if runtime is not None and str(runtime).strip() else None
+            if choice is not None and choice.mode == StepParameterMode.FIXED:
+                params[p.name] = choice.value
+            elif choice is not None and choice.mode == StepParameterMode.UPSTREAM:
+                params[p.name] = f"{{{choice.value}}}"
+            elif runtime is not None:
+                params[p.name] = runtime
+            elif p.required:
+                params[p.name] = None
+        return params
+
+    def _resolve_edited(self, spec: CanonicalWorkflowSpec, runtime_inputs: Dict[str, str]) -> List[ResolvedParameter]:
+        """Parameter resolution for an edited workflow: one entry per step input, from the editor's choices."""
+        from app.models.canonical import StepParameterMode
+
+        resolved: List[ResolvedParameter] = []
+        for step in spec.steps:
+            catalog = get_action(step.catalog_action)
+            if catalog is None:
+                continue
+            values = self._edited_step_parameters(catalog, step, runtime_inputs)
+            for p in catalog.parameters:
+                if p.name not in values:
+                    continue
+                choice = (step.parameters or {}).get(p.name)
+                value = values[p.name]
+                if choice is not None and choice.mode == StepParameterMode.UPSTREAM:
+                    status = ParameterResolutionStatus.FROM_UPSTREAM
+                elif value is None:
+                    status = ParameterResolutionStatus.UNRESOLVED
+                else:
+                    status = ParameterResolutionStatus.RESOLVED
+                resolved.append(
+                    ResolvedParameter(
+                        source_parameter=f"{step.canonical_step_id}.{p.name}",
+                        semantic_name=p.name,
+                        source_field=f"editor.{p.name}",
+                        inferred_type="string",
+                        runtime_value=value,
+                        resolution_status=status,
+                        is_required=p.required,
+                    )
+                )
+        return resolved
+
     def evaluate_preconditions(self, preconditions: List[str]) -> List[PreconditionCheck]:
         """Evaluate structural preconditions, explicitly distinguishing satisfied from unknown."""
         checks: List[PreconditionCheck] = []
@@ -269,8 +328,11 @@ class ExecutionPlanner:
                 f"'{spec.approval_state.state.value.upper()}'. It must be APPROVED by a human reviewer before planning execution."
             )
 
-        # 1. Parameter Resolution
-        resolved_params_list = self.resolve_parameters(spec, runtime_inputs)
+        # 1. Parameter Resolution (an edited workflow's inputs come from the editor's choices)
+        edited = any(s.parameters is not None for s in spec.steps if s.catalog_action)
+        resolved_params_list = (
+            self._resolve_edited(spec, runtime_inputs or {}) if edited else self.resolve_parameters(spec, runtime_inputs)
+        )
         resolved_param_map = {
             p.semantic_name: p.runtime_value for p in resolved_params_list
         }
@@ -306,9 +368,12 @@ class ExecutionPlanner:
                     reason=f"ActionCatalog '{catalog.action_id}' routes exactly to {catalog.executor_name}.",
                     target_technology=catalog.executor_name,
                 )
-                step_params = self._catalog_step_parameters(
-                    catalog, step.source_dna_step_key, spec, resolved_params_list, runtime_inputs or {}
-                )
+                if step.parameters is not None:
+                    step_params = self._edited_step_parameters(catalog, step, runtime_inputs or {})
+                else:
+                    step_params = self._catalog_step_parameters(
+                        catalog, step.source_dna_step_key, spec, resolved_params_list, runtime_inputs or {}
+                    )
             else:
                 strategy = self.select_strategy(
                     app_name=step.application,

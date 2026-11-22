@@ -46,7 +46,10 @@ class CatalogAction:
     risk_reason: str
     requires_confirmation: bool = False
     parameters: Tuple[CatalogParameter, ...] = field(default_factory=tuple)
+    # Run values this action provides to later steps (context keys set by the ExecutionEngine).
     produces: Tuple[str, ...] = field(default_factory=tuple)
+    # Run values an earlier step must provide (the workflow editor rejects a step placed before them).
+    requires: Tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def step_key(self) -> str:

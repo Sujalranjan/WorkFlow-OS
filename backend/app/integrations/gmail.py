@@ -47,6 +47,7 @@ DOWNLOAD_ATTACHMENT = CatalogAction(
     risk_category=RiskCategory.LOCAL_CHANGE,
     risk_reason="Writes the attachment into the isolated per-execution sandbox only.",
     produces=("downloaded_file", "attachment_sha256"),
+    requires=("message_id",),
 )
 
 
@@ -65,6 +66,7 @@ ADD_LABEL = CatalogAction(
         CatalogParameter("label", "Name of an existing Gmail label (created by you, not a system label)"),
     ),
     produces=("gmail_label",),
+    requires=("message_id",),
 )
 
 

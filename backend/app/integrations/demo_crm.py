@@ -31,7 +31,7 @@ FIND_CUSTOMER = CatalogAction(
     parameters=(
         CatalogParameter("customer_query", "Customer id, email or name to look up", upstream_template="{customer_email}"),
     ),
-    produces=("customer_id", "customer_name", "customer_email"),
+    produces=("customer_id", "customer_name", "customer_email", "customer_status"),
 )
 
 UPDATE_CUSTOMER = CatalogAction(
@@ -46,7 +46,8 @@ UPDATE_CUSTOMER = CatalogAction(
     risk_reason="Mutates an external CRM record.",
     requires_confirmation=True,
     parameters=(CatalogParameter("customer_status", "New status value written to the CRM record"),),
-    produces=("crm_updated",),
+    produces=("crm_updated", "customer_status"),
+    requires=("customer_id",),
 )
 
 

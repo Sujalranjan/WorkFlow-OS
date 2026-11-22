@@ -46,6 +46,14 @@ class ExecutionPolicyEngine:
                 f"Execution plan '{plan.execution_plan_id}' does not match workflow ID '{spec.workflow_id}'."
             )
 
+        # 2b. The plan must have been made from the version that is approved now: after an edit,
+        # an older plan (or a paused run of it) would carry out steps nobody approved.
+        if plan.workflow_version and spec.version and plan.workflow_version != spec.version:
+            violations.append(
+                f"Execution plan '{plan.execution_plan_id}' was made for version {plan.workflow_version}, "
+                f"but the workflow is now version {spec.version}. Create a new plan."
+            )
+
         # 3. Parameter resolution check: No unresolved parameters allowed in LIVE execution
         for param in plan.resolved_parameters:
             if param.resolution_status == ParameterResolutionStatus.UNRESOLVED and param.is_required:

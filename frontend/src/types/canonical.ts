@@ -79,6 +79,8 @@ export interface CanonicalStep {
   occurrence_ratio: number;
   classification: string;
   catalog_action?: string | null;
+  /** Set by the workflow editor: where each input comes from. */
+  parameters?: Record<string, { mode: 'upstream' | 'fixed' | 'runtime'; value?: string | null }> | null;
 }
 
 export interface CanonicalOptionalStep {

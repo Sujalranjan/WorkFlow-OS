@@ -159,6 +159,18 @@ class ApprovalMetadata(BaseModel):
     )
 
 
+class StepParameterMode(str, Enum):
+    """Where an edited step's parameter value comes from at run time."""
+    UPSTREAM = "upstream"  # a value an earlier step of the same run produced ({key})
+    FIXED = "fixed"  # a constant chosen by a person in the workflow editor
+    RUNTIME = "runtime"  # asked for when the run starts (unresolved until then)
+
+
+class StepParameter(BaseModel):
+    mode: StepParameterMode
+    value: Optional[str] = Field(default=None, description="upstream: the run value's key; fixed: the constant")
+
+
 class CanonicalStep(BaseModel):
     """Formal workflow step preserving complete end-to-end traceability."""
     canonical_step_id: str = Field(..., description="Canonical step ID (e.g. 'can-step-1')")
@@ -177,6 +189,10 @@ class CanonicalStep(BaseModel):
     catalog_action: Optional[str] = Field(
         default=None,
         description="Executable ActionCatalog id inherited from WorkflowDNA. None means the step is observational context only.",
+    )
+    parameters: Optional[Dict[str, StepParameter]] = Field(
+        default=None,
+        description="Set by the workflow editor: how each catalog parameter is filled. None = derived from the recording.",
     )
 
 
@@ -255,6 +271,10 @@ class ApprovalActionRequest(BaseModel):
     )
     comments: Optional[str] = Field(default=None, description="Optional reviewer comments")
     reason: Optional[str] = Field(default=None, description="Reason for rejection if rejecting")
+    version: Optional[str] = Field(
+        default=None,
+        description="The version the reviewer looked at; the decision is refused if the workflow changed since",
+    )
 
 
 class SpecificationListResponse(BaseModel):

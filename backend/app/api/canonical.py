@@ -11,7 +11,7 @@ Approval changes workflow governance state only. No browser automation,
 mouse/keyboard input, or API calls to external services are executed.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dna import _generate_dna_from_events
@@ -25,11 +25,12 @@ from app.models.canonical import (
     SpecificationListResponse,
 )
 from app.models.dna import WorkflowDNA
-from app.repositories.canonical_repository import CanonicalWorkflowRepository
+from app.repositories.canonical_repository import CanonicalWorkflowRepository, WorkflowConflict
 from app.security import current_actor
 from app.services.canonical_factory import CanonicalWorkflowFactory
 from app.services.event_service import EventService
 from app.services.semantic_engine import SemanticUnderstandingEngine
+from app.services import workflow_editor
 
 router = APIRouter(prefix="/api/workflows", tags=["Canonical Workflow Specification"])
 
@@ -145,12 +146,16 @@ def approve_canonical_specification_endpoint(
     Approval confirms human acceptance of the workflow contract.
     It does NOT execute any automated tasks, browser actions, or external mutations.
     """
-    updated = repository.update_approval_state(
-        workflow_id=workflow_id,
-        new_state=ApprovalState.APPROVED,
-        reviewer=actor,
-        comments=payload.comments,
-    )
+    try:
+        updated = repository.update_approval_state(
+            workflow_id=workflow_id,
+            new_state=ApprovalState.APPROVED,
+            reviewer=actor,
+            comments=payload.comments,
+            expected_version=payload.version,
+        )
+    except WorkflowConflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -167,13 +172,17 @@ def reject_canonical_specification_endpoint(
     actor: str = Depends(current_actor),
 ) -> CanonicalWorkflowSpec:
     """Reject a canonical workflow specification with an optional explanation."""
-    updated = repository.update_approval_state(
-        workflow_id=workflow_id,
-        new_state=ApprovalState.REJECTED,
-        reviewer=actor,
-        comments=payload.comments,
-        rejection_reason=payload.reason,
-    )
+    try:
+        updated = repository.update_approval_state(
+            workflow_id=workflow_id,
+            new_state=ApprovalState.REJECTED,
+            reviewer=actor,
+            comments=payload.comments,
+            rejection_reason=payload.reason,
+            expected_version=payload.version,
+        )
+    except WorkflowConflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -209,3 +218,90 @@ def update_specification_parameters_endpoint(
             detail=f"Canonical Workflow Specification '{workflow_id}' not found.",
         )
     return updated
+
+
+# ------------------------------------------------------------------- workflow editor
+
+
+def _spec_or_404(repository: CanonicalWorkflowRepository, workflow_id: str) -> CanonicalWorkflowSpec:
+    spec = repository.get_by_id(workflow_id)
+    if not spec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow '{workflow_id}' not found.")
+    return spec
+
+
+@router.get("/specifications/{workflow_id}/definition")
+def get_workflow_definition(
+    workflow_id: str, repository: CanonicalWorkflowRepository = Depends(get_canonical_repository)
+) -> Dict[str, Any]:
+    """The workflow as the editor shows it: runnable steps and where each input comes from."""
+    return workflow_editor.current_definition(_spec_or_404(repository, workflow_id))
+
+
+@router.post("/specifications/{workflow_id}/definition/validate")
+def validate_workflow_definition(
+    workflow_id: str,
+    definition: workflow_editor.WorkflowDefinition,
+    repository: CanonicalWorkflowRepository = Depends(get_canonical_repository),
+) -> Dict[str, Any]:
+    """Check an edit without saving it (errors block saving; warnings are shown)."""
+    spec = _spec_or_404(repository, workflow_id)
+    issues = workflow_editor.validate(spec, definition)
+    return {"valid": not any(i.level == "error" for i in issues), "issues": [i.model_dump() for i in issues]}
+
+
+@router.put("/specifications/{workflow_id}/definition", response_model=CanonicalWorkflowSpec)
+def save_workflow_definition(
+    workflow_id: str,
+    definition: workflow_editor.WorkflowDefinition,
+    repository: CanonicalWorkflowRepository = Depends(get_canonical_repository),
+    actor: str = Depends(current_actor),
+) -> CanonicalWorkflowSpec:
+    """Save an edit as the next version. The workflow goes back to 'requires review': nothing runs
+    (manually or from a trigger) until someone approves the new version."""
+    spec = _spec_or_404(repository, workflow_id)
+    if spec.version != definition.base_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This workflow is now version {spec.version}; your changes start from {definition.base_version}. Reload it.",
+        )
+    issues = workflow_editor.validate(spec, definition)
+    errors = [i for i in issues if i.level == "error"]
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "The workflow has problems to fix first.", "issues": [i.model_dump() for i in issues]},
+        )
+    edited = workflow_editor.apply(spec, definition, actor)
+    changes = workflow_editor.changes_between(spec, edited)
+    if all(c["kind"] == "context" for c in changes):  # dropping recorded context alone is not an edit
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing changed.")
+    try:
+        return repository.save_edit(spec, edited, actor, definition.note, changes)
+    except WorkflowConflict as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@router.get("/specifications/{workflow_id}/versions")
+def list_workflow_versions(
+    workflow_id: str, repository: CanonicalWorkflowRepository = Depends(get_canonical_repository)
+) -> Dict[str, Any]:
+    spec = _spec_or_404(repository, workflow_id)
+    versions = repository.list_versions(workflow_id)
+    if not versions:  # never edited: the recorded version is the only one
+        versions = [{"version": spec.version, "created_at": spec.created_at, "created_by": None,
+                     "note": "As discovered from recorded activity", "changes": []}]
+    return {"current_version": spec.version, "versions": versions}
+
+
+@router.get("/specifications/{workflow_id}/versions/{version}", response_model=CanonicalWorkflowSpec)
+def get_workflow_version(
+    workflow_id: str, version: str, repository: CanonicalWorkflowRepository = Depends(get_canonical_repository)
+) -> CanonicalWorkflowSpec:
+    spec = _spec_or_404(repository, workflow_id)
+    if version == spec.version:
+        return spec
+    old = repository.get_version(workflow_id, version)
+    if not old:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Version {version} not found.")
+    return old
