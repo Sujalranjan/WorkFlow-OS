@@ -453,6 +453,13 @@ class ExecutionEngine:
                 elif act_norm in ("send_notification", "notify"):
                     if step_result.output.get("ts"):
                         context.resolved_parameters["slack_ts"] = step_result.output.get("ts")
+                        # where the message is, so a later reply_in_thread goes under it
+                        context.resolved_parameters["slack_channel"] = step_result.output.get("channel")
+
+                elif act_norm == "reply_in_thread":
+                    # never overwrites slack_ts: further replies stay in the same thread
+                    if step_result.output.get("ts"):
+                        context.resolved_parameters["slack_reply_ts"] = step_result.output.get("ts")
 
             # Human intervention: the step could not decide safely on its own (e.g. no CRM customer,
             # or several). Pause here; remaining steps are neither run nor skipped, so the run can

@@ -356,7 +356,7 @@ def test_slack_executor_registered_in_registry():
     slack_cap = next((c for c in caps if c.executor_name == "SlackApiExecutor"), None)
     assert slack_cap is not None
     assert slack_cap.implemented is True
-    assert slack_cap.supported_actions == ["send_notification"]
+    assert slack_cap.supported_actions == ["send_notification", "reply_in_thread"]
 
 
 def test_strategy_selector_selects_slack_api_executor():

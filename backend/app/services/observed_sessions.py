@@ -174,3 +174,25 @@ def build_observed_folder_events(start: datetime = datetime(2026, 11, 9, 9, 0, t
     for i, s in enumerate(SESSIONS):
         events.extend(build_folder_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
     return events
+
+
+def build_thread_session_events(start: datetime, invoice: str, msg: str) -> List[ActivityEvent]:
+    """Gmail attachment -> 'received' in Slack -> filed in the shared folder -> 'done' as a thread reply."""
+    session = build_folder_session_events(start, invoice, msg)
+    download, saved, slack_focus, slack_send = session[3], session[4], session[5], session[6]
+    step = timedelta(seconds=7)
+    t = download.timestamp
+    slack_url = slack_send.metadata["url"]
+    return session[:4] + [
+        _event(t + step, ActivityEventType.WINDOW_FOCUSED, "Slack", window_title=slack_focus.metadata["window_title"]),
+        _event(t + 2 * step, ActivityEventType.FORM_SUBMITTED, "Google Chrome", url=slack_url),
+        saved.model_copy(update={"timestamp": t + 3 * step, "event_id": f"{saved.event_id}-t"}),
+        _event(t + 4 * step, ActivityEventType.FORM_SUBMITTED, "Google Chrome", url=slack_url, form_fields={"kind": "thread_reply"}),
+    ]
+
+
+def build_observed_thread_events(start: datetime = datetime(2026, 11, 16, 9, 0, tzinfo=timezone.utc)) -> List[ActivityEvent]:
+    events: List[ActivityEvent] = []
+    for i, s in enumerate(SESSIONS):
+        events.extend(build_thread_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
+    return events

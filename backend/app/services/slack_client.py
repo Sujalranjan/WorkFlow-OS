@@ -228,6 +228,7 @@ class SlackApiClient:
         text: str = "",
         blocks: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        thread_ts: Optional[str] = None,
     ) -> SlackNotificationResult:
         """Sends a notification to a Slack channel via chat.postMessage.
 
@@ -236,6 +237,7 @@ class SlackApiClient:
             text: Notification message content.
             blocks: Optional Block Kit components.
             metadata: Optional structured metadata.
+            thread_ts: Post as a reply in the thread of this message (same channel).
 
         Returns:
             SlackNotificationResult: Structured response with success status and message ts.
@@ -255,6 +257,8 @@ class SlackApiClient:
             payload["blocks"] = blocks
         if metadata:
             payload["metadata"] = metadata
+        if thread_ts:
+            payload["thread_ts"] = str(thread_ts)
 
         # 2. HTTP POST
         try:
@@ -317,6 +321,25 @@ class SlackApiClient:
             message=data.get("message"),
             status_code=resp.status_code,
         )
+
+    def verify_reply(self, channel: str, parent_ts: str, reply_ts: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+        """Confirms a reply exists in the thread of `parent_ts` (conversations.replies; same
+        channels:history / groups:history scope as verify_message). Returns (found, message, reason)."""
+        if not channel or not parent_ts or not reply_ts:
+            return False, None, "Invalid channel or timestamps for verification."
+        headers = self._get_auth_headers()
+        params = {"channel": channel, "ts": parent_ts, "oldest": reply_ts, "latest": reply_ts, "inclusive": "true", "limit": 10}
+        try:
+            with self._get_client() as client:
+                data = client.get(f"{self.base_url}/conversations.replies", headers=headers, params=params).json()
+        except Exception as e:
+            return False, None, f"Failed to query Slack API for verification: {type(e).__name__}"
+        if not data.get("ok"):
+            return False, None, f"Slack verification query failed: {data.get('error', 'unknown_error')}"
+        for msg in data.get("messages") or []:
+            if str(msg.get("ts")) == str(reply_ts) and str(msg.get("thread_ts")) == str(parent_ts) and str(reply_ts) != str(parent_ts):
+                return True, msg, f"Reply '{reply_ts}' confirmed in the thread of '{parent_ts}' in channel '{channel}'."
+        return False, None, f"Reply '{reply_ts}' not found in the thread of '{parent_ts}' in channel '{channel}'."
 
     def verify_message(
         self,

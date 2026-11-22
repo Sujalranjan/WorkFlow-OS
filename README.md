@@ -32,6 +32,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 | `hubspot.add_note` | note saved on a HubSpot contact record | HubSpotApiExecutor | medium |
 | `files.save_to_folder` | file saved into the shared folder the desktop agent watches | SharedFolderExecutor | medium, never overwrites |
 | `slack.send_notification` | message sent in `app.slack.com/client/<team>/<channel>` | SlackApiExecutor | medium |
+| `slack.reply_in_thread` | message sent from a thread's reply box | SlackApiExecutor (under this run's own message) | medium |
 
 - Events are classified deterministically (URL and metadata rules, with no LLM involved). A classified event becomes a DNA step such as `gmail:search_email` with `catalog_action` set. Its parameters (search query, customer, status, channel) become DNA variables.
 - The LLM only describes the workflow. It cannot rename, drop or re-route an executable step: the validator rejects output that omits one, and the spec takes action names and risk levels from the catalog.

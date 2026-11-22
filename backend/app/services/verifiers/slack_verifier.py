@@ -48,7 +48,7 @@ class SlackVerificationStrategy(BaseVerificationStrategy):
         app_norm = step.application.lower().strip()
         act_norm = step.action.lower().strip().replace(" ", "_")
         is_slack = "slack" in app_norm
-        is_act = act_norm == "send_notification"
+        is_act = act_norm in ("send_notification", "reply_in_thread")
         is_exec = (step_result is not None and step_result.executor_name == "SlackApiExecutor")
         return (is_slack and is_act) or is_exec
 
@@ -71,6 +71,30 @@ class SlackVerificationStrategy(BaseVerificationStrategy):
             "blocked_reason": step_result.blocked_reason,
             "error": step_result.error,
         }
+
+        if output.get("operation") == "reply_in_thread" or step.action == "reply_in_thread":
+            thread_ts = output.get("thread_ts") or "unknown_thread"
+            return [
+                VerificationCheck(
+                    verification_id=f"vchk-slack-{uuid.uuid4().hex[:8]}",
+                    execution_id=execution_id,
+                    execution_step_id=step_result.execution_step_id,
+                    planned_step_id=step.plan_step_id,
+                    check_type="slack_thread_reply_delivered",
+                    strategy_type=self.strategy_type,
+                    target=f"Slack:channel:{channel}:thread:{thread_ts}:ts:{ts}",
+                    expected_state={
+                        "operation": "reply_in_thread",
+                        "channel": channel,
+                        "thread_ts": thread_ts,
+                        "ts": ts,
+                        "status": "COMPLETED",
+                    },
+                    actual_state=initial_actual,
+                    status=VerificationStatus.PENDING,
+                    reason=f"Verifying the reply in the thread of '{thread_ts}' in Slack channel '{channel}'",
+                )
+            ]
 
         return [
             VerificationCheck(
@@ -141,10 +165,20 @@ class SlackVerificationStrategy(BaseVerificationStrategy):
             return check
 
         try:
-            is_valid, msg_data, verif_msg = self.client.verify_message(
-                channel=str(channel),
-                ts=str(ts),
-            )
+            if check.check_type == "slack_thread_reply_delivered":
+                parent = output.get("thread_ts")
+                if not parent:
+                    check.status = VerificationStatus.FAILED
+                    check.reason = "Verification failed: the reply has no parent message in the execution output"
+                    return check
+                is_valid, msg_data, verif_msg = self.client.verify_reply(
+                    channel=str(channel), parent_ts=str(parent), reply_ts=str(ts)
+                )
+            else:
+                is_valid, msg_data, verif_msg = self.client.verify_message(
+                    channel=str(channel),
+                    ts=str(ts),
+                )
 
             if not is_valid:
                 check.status = VerificationStatus.FAILED
@@ -165,7 +199,7 @@ class SlackVerificationStrategy(BaseVerificationStrategy):
                 "integrity_evidence": "cryptographic integrity evidence using SHA-256",
                 "verified_at": check.checked_at,
             }
-            check.reason = f"Verified: Message confirmed present in Slack channel '{channel}' at ts '{ts}' with cryptographic integrity evidence using SHA-256."
+            check.reason = f"Verified: {verif_msg}"
             return check
 
         except Exception as e:

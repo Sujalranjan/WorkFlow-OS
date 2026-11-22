@@ -112,7 +112,11 @@ Each one is mergeable on its own, with tests on SQLite and Postgres.
 
 ### 3e: More catalog actions (all four chosen)
 Each with executor, verifier, observation rule and tests:
-- `slack.reply_in_thread`: reply to the message a run posted earlier, instead of a new message.
+- `slack.reply_in_thread` (**done**): reply under the message the same run posted earlier
+  (`thread_ts` resolves from `{slack_ts}`, channel from that message), never a recorded one; with no
+  earlier message the step is BLOCKED rather than posting a new top-level message. The default reply
+  lists what happened after the first message. Verified with `conversations.replies` (same
+  `channels:history` scope). The extension tags sends from the thread pane as `kind: thread_reply`.
 - `sheets.append_row`: add a row to a Google Sheet (needs the Sheets scope on the Google sign-in).
 - `gmail.add_label`: label the processed email. Needs the opt-in `gmail.modify` scope; the label is
   the only change it can make (no sending, deleting, archiving or moving).
