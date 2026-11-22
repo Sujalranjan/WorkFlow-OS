@@ -31,6 +31,8 @@ GMAIL_ENABLED = os.getenv("GMAIL_ENABLED", "false").lower() in ("true", "1", "ye
 GMAIL_CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
 GMAIL_TOKEN_PATH = os.getenv("GMAIL_TOKEN_PATH", "token.json")
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Opt-in, only for gmail.add_label (Settings > Gmail > "Allow labeling"); never requested otherwise.
+GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 GMAIL_SEARCH_QUERY = os.getenv("GMAIL_SEARCH_QUERY", "from:me")
 GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "5"))
 

@@ -25,6 +25,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 |---|---|---|---|
 | `gmail.search_email` | Gmail search route `#search/<query>` | GmailApiExecutor (read-only) | low |
 | `gmail.download_attachment` | completed download from Gmail | GmailApiExecutor → sandbox | medium |
+| `gmail.add_label` | label applied in Gmail ("Label as" → Apply) | GmailLabelExecutor (opt-in, adds user labels only) | medium |
 | `crm.find_customer` | CRM page `/ui/customers/<id>` or `?q=` | CrmApiExecutor | low |
 | `crm.update_customer_record` | CRM form submit (status field) | CrmApiExecutor | high, confirmation required |
 | `hubspot.find_contact` | HubSpot contact record page or contacts-list search | HubSpotApiExecutor | low |
@@ -159,6 +160,7 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 |---|---|---|
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
 | Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
+| Gmail labeling (optional) | **Settings > Integrations > Gmail > Allow labeling**, then **Reconnect Gmail** | Adds the `gmail.modify` permission, used only to *add* labels you created to processed emails. Off by default |
 | Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification). Add `channels:read` (and `groups:read` for private channels) to pick the channel from a list; without them, type the channel ID. Settings warns when the bot is not in the chosen channel. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | HubSpot | **Settings > Integrations > HubSpot** | Service key with `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read`; then choose the contact property that "Update contact" writes. `HUBSPOT_ACCESS_TOKEN` works as a fallback |
 | Shared folder | **Settings > Integrations > Shared folder** | A folder on the WorkFlowOS server (with Docker, mount it into the `api` and `worker` containers). `SHARED_FOLDER_PATH` works as a fallback. Set `SHARED_FOLDER_DIRECTORY` for the desktop agent so saving files there is observed |
@@ -172,7 +174,7 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 2. Add the redirect URI shown in Settings as an *authorized redirect URI*: `PUBLIC_API_URL` + `/api/integrations/gmail/callback` (default `http://localhost:8000/api/integrations/gmail/callback`).
 3. Paste the client ID and secret into Settings, click **Connect Gmail**, and approve read-only access.
 
-The sign-in uses PKCE and a single-use state that expires after 10 minutes. Only the `gmail.readonly` scope is requested. **Disconnect** revokes the token at Google.
+The sign-in uses PKCE and a single-use state that expires after 10 minutes. Only the `gmail.readonly` scope is requested, unless an admin turns on **Allow labeling**: then `gmail.modify` is requested too, and WorkFlowOS uses it only to add user labels (never system labels such as Trash, Spam or Inbox, and never to send, delete, archive or move email). Unticking it on Google's consent screen keeps Gmail read-only; label steps are then blocked with a clear message. **Disconnect** revokes the token at Google.
 
 Credentials saved in Settings are encrypted with `WORKFLOWOS_SECRET_KEY`, or with a key file created next to the database. Back up that key separately from the database: without it, saved integrations must be connected again. Settings take precedence over the older `.env` and `token.json` setup. Environment variables take precedence over `.env`. Never commit `.env`, `credentials.json`, `token.json` or `*.secret.key` (they are git-ignored).
 

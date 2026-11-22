@@ -49,6 +49,7 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("PUT", "/api/integrations/gmail/client"): AD,
     ("DELETE", "/api/integrations/gmail/client"): AD,
     ("POST", "/api/integrations/gmail/connect"): AD,
+    ("PUT", "/api/integrations/gmail/options"): AD,
     ("GET", "/api/integrations/gmail/callback"): PUBLIC,
     ("DELETE", "/api/integrations/gmail"): AD,
     ("PUT", "/api/integrations/files"): AD,

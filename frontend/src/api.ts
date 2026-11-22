@@ -314,6 +314,9 @@ export interface Integrations {
     client_source: 'settings' | 'file' | null;
     client_id: string | null;
     redirect_uri: string;
+    /** Opted in to labeling (Settings) / Google granted gmail.modify at the last Connect Gmail. */
+    labels_allowed: boolean;
+    can_label: boolean;
   };
   slack: {
     configured: boolean;
@@ -391,3 +394,5 @@ export const removeHubSpot = () => request<Integrations>('/api/integrations/hubs
 export const saveSharedFolder = (folder: string) =>
   request<Integrations>('/api/integrations/files', { method: 'PUT', body: JSON.stringify({ folder }) });
 export const removeSharedFolder = () => request<Integrations>('/api/integrations/files', { method: 'DELETE' });
+export const saveGmailOptions = (allow_labels: boolean) =>
+  request<Integrations>('/api/integrations/gmail/options', { method: 'PUT', body: JSON.stringify({ allow_labels }) });

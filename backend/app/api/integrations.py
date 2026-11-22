@@ -42,6 +42,10 @@ class SlackSettingsRequest(BaseModel):
     channel_id: str = Field(..., min_length=2, max_length=80)
 
 
+class GmailOptionsRequest(BaseModel):
+    allow_labels: bool
+
+
 class SharedFolderRequest(BaseModel):
     folder: str = Field(..., min_length=1, max_length=1000)
 
@@ -100,6 +104,13 @@ def gmail_callback(
     except IntegrationError as e:
         target = f"{e.return_to or fallback}/#/settings/gmail-error/{quote(e.code)}"
     return RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.put("/gmail/options")
+def save_gmail_options(req: GmailOptionsRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    service.set_gmail_options(req.allow_labels, actor)
+    return service.describe()
 
 
 @router.delete("/gmail")

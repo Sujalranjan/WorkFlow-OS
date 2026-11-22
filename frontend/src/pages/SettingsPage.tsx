@@ -19,6 +19,7 @@ import {
   removeSlack,
   revokeApiKey,
   saveGmailClient,
+  saveGmailOptions,
   saveHubSpot,
   saveHubSpotSettings,
   saveSharedFolder,
@@ -456,6 +457,41 @@ const GmailCard: React.FC<CardProps> = ({ info, action, update }) => {
           </div>
         </>
       )}
+
+      <div className="form">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={g.labels_allowed}
+            disabled={busy}
+            onChange={(e) => {
+              const on = e.target.checked;
+              update(
+                action.run(
+                  'gmail-options',
+                  () => saveGmailOptions(on),
+                  on
+                    ? 'Labeling allowed. Click Reconnect Gmail and allow the extra permission.'
+                    : 'Labeling turned off. Reconnect Gmail to also remove the permission at Google.'
+                )
+              );
+            }}
+          />{' '}
+          Allow labeling processed emails
+        </label>
+        <p className="muted small">
+          Off by default: Gmail stays read-only. When on, the next Connect Gmail also asks Google for{' '}
+          <code>gmail.modify</code>. WorkFlowOS uses it only to <strong>add</strong> labels you created (never system labels
+          like Trash or Spam) and never sends, deletes, archives or moves email.
+          {g.labels_allowed && g.connected && !g.can_label && (
+            <>
+              {' '}
+              <strong>Reconnect Gmail to grant it.</strong>
+            </>
+          )}
+          {g.labels_allowed && g.can_label && ' Labeling is ready.'}
+        </p>
+      </div>
     </div>
   );
 };

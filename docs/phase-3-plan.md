@@ -118,8 +118,13 @@ Each with executor, verifier, observation rule and tests:
   lists what happened after the first message. Verified with `conversations.replies` (same
   `channels:history` scope). The extension tags sends from the thread pane as `kind: thread_reply`.
 - `sheets.append_row`: add a row to a Google Sheet (needs the Sheets scope on the Google sign-in).
-- `gmail.add_label`: label the processed email. Needs the opt-in `gmail.modify` scope; the label is
-  the only change it can make (no sending, deleting, archiving or moving).
+- `gmail.add_label` (**done**): label the processed email. Opt-in (Settings > Gmail > Allow labeling,
+  then Reconnect Gmail requests `gmail.modify`); the granted scopes are kept in the token's metadata.
+  A separate `GmailLabeler`/`GmailLabelExecutor` does it, so `GmailApiClient`/`GmailApiExecutor` stay
+  read-only (`GMAIL_SCOPES` unchanged). Adds only (`addLabelIds`), user labels only (system labels
+  like TRASH/SPAM/INBOX are never applied), message from `{message_id}`, label recorded by name; a
+  missing opt-in, permission or label is BLOCKED. Verified by re-reading the message's labels
+  (`format=minimal`). Observed by a best-effort `gmail_content.js` (label name only).
 - `files.save_to_folder` (**done**): copy the downloaded attachment into the shared folder an admin
   chooses in Settings (or `SHARED_FOLDER_PATH`). Only a file inside the run's own sandbox can be
   copied; names are reduced to a plain file name; nothing is overwritten (`name (2).ext`, created

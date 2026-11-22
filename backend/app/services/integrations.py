@@ -26,6 +26,7 @@ import httpx
 from app import config
 from app.services.credential_store import (
     GMAIL_OAUTH_CLIENT,
+    GMAIL_OPTIONS,
     GMAIL_TOKEN,
     HUBSPOT,
     SHARED_FOLDER,
@@ -107,6 +108,24 @@ class IntegrationService:
     def remove_gmail_client(self) -> None:
         self.store.delete(GMAIL_OAUTH_CLIENT)
 
+    # ---------------------------------------------------------- gmail options
+
+    def gmail_labels_allowed(self) -> bool:
+        info = self.store.info(GMAIL_OPTIONS)
+        return bool(info and info.metadata.get("allow_labels"))
+
+    def set_gmail_options(self, allow_labels: bool, actor: str) -> None:
+        """Opt in to (or out of) labeling. Turning it on takes effect at the next Connect Gmail,
+        which then also asks Google for the gmail.modify permission. Turning it off stops labeling
+        at once; reconnecting afterwards removes the permission at Google."""
+        self.store.put(GMAIL_OPTIONS, {}, {"allow_labels": bool(allow_labels)}, actor)
+
+    def _gmail_requested_scopes(self) -> list:
+        scopes = list(config.GMAIL_SCOPES)
+        if self.gmail_labels_allowed():
+            scopes.append(config.GMAIL_MODIFY_SCOPE)
+        return scopes
+
     # ---------------------------------------------------------- gmail connect
 
     def start_gmail_connect(self, actor: str, return_to: Optional[str] = None) -> str:
@@ -126,7 +145,7 @@ class IntegrationService:
             "client_id": client[0],
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
-            "scope": " ".join(config.GMAIL_SCOPES),
+            "scope": " ".join(self._gmail_requested_scopes()),
             "access_type": "offline",
             "prompt": "consent",  # always return a refresh token, also on reconnect
             "include_granted_scopes": "false",
@@ -184,6 +203,9 @@ class IntegrationService:
             e.return_to = return_to
             raise
 
+        # Google lets people untick a permission on the consent screen: keep what was really granted.
+        # Stored as metadata, because the reading client rewrites the secret when it refreshes.
+        granted_scopes = sorted(set(self._gmail_requested_scopes()) & granted)
         expiry = datetime.now(timezone.utc) + timedelta(seconds=int(tokens.get("expires_in", 3600)))
         secret = {
             "token": tokens["access_token"],
@@ -191,11 +213,11 @@ class IntegrationService:
             "token_uri": GOOGLE_TOKEN_URL,
             "client_id": client_id,
             "client_secret": client_secret,
-            "scopes": list(config.GMAIL_SCOPES),
+            "scopes": granted_scopes,
             # google-auth expects a naive UTC timestamp here
             "expiry": expiry.replace(tzinfo=None).isoformat(),
         }
-        metadata = {"account": account}
+        metadata = {"account": account, "scopes": granted_scopes}
         self.store.put(GMAIL_TOKEN, secret, metadata, pending.get("actor"))
         logger.info("Gmail connected", extra={"account": account, "actor": pending.get("actor")})
         return return_to, metadata
@@ -412,6 +434,10 @@ class IntegrationService:
                 "client_source": client[2] if client else None,
                 "client_id": client[0] if client else None,
                 "redirect_uri": self.redirect_uri,
+                # labeling: opted in (Settings) and granted by Google at the last Connect Gmail
+                "labels_allowed": self.gmail_labels_allowed(),
+                "can_label": bool(gmail_token)
+                and config.GMAIL_MODIFY_SCOPE in (gmail_token.metadata.get("scopes") or []),
             },
             "hubspot": self._describe_hubspot(),
             "files": self._describe_shared_folder(),

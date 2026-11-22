@@ -439,6 +439,10 @@ class ExecutionEngine:
                     if step_result.output.get("note_id"):
                         context.resolved_parameters["note_id"] = step_result.output.get("note_id")
 
+                elif act_norm == "add_label":
+                    if step_result.output.get("label_id"):
+                        context.resolved_parameters["gmail_label"] = step_result.output.get("label")
+
                 elif act_norm == "save_to_folder":
                     if step_result.output.get("saved_path"):
                         context.resolved_parameters["saved_file"] = step_result.output.get("saved_path")

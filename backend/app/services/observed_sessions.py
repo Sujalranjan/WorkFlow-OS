@@ -196,3 +196,26 @@ def build_observed_thread_events(start: datetime = datetime(2026, 11, 16, 9, 0, 
     for i, s in enumerate(SESSIONS):
         events.extend(build_thread_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
     return events
+
+
+PROCESSED_LABEL = "Processed"
+
+
+def build_label_session_events(start: datetime, invoice: str, msg: str) -> List[ActivityEvent]:
+    """Gmail attachment -> label the email 'Processed' -> Slack."""
+    session = build_folder_session_events(start, invoice, msg)
+    labeled = _event(
+        session[3].timestamp + timedelta(seconds=3),
+        ActivityEventType.FORM_SUBMITTED,
+        "Google Chrome",
+        url=f"{GMAIL_SEARCH_URL}/{msg}",
+        form_fields={"kind": "label_added", "label": PROCESSED_LABEL},
+    )
+    return session[:4] + [labeled] + session[5:]
+
+
+def build_observed_label_events(start: datetime = datetime(2026, 11, 18, 9, 0, tzinfo=timezone.utc)) -> List[ActivityEvent]:
+    events: List[ActivityEvent] = []
+    for i, s in enumerate(SESSIONS):
+        events.extend(build_label_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
+    return events

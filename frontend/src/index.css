@@ -433,7 +433,8 @@ select {
   width: 100%;
 }
 
-input[type='radio'] {
+input[type='radio'],
+input[type='checkbox'] {
   width: auto;
   accent-color: var(--accent);
 }
@@ -445,6 +446,14 @@ input[type='radio'] {
   font-size: 0.85rem;
   font-weight: 500;
   margin-top: 0.25rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .form {

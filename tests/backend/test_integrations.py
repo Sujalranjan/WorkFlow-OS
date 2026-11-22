@@ -27,6 +27,7 @@ from app.services.slack_client import SlackApiClient
 CLIENT_ID = "1234-abc.apps.googleusercontent.com"
 CLIENT_SECRET = "GOCSPX-test-client-secret"
 REFRESH = "1//refresh-token-value"
+READONLY = "https://www.googleapis.com/auth/gmail.readonly"
 DASHBOARD = config.FRONTEND_ORIGINS[0]
 
 
@@ -194,7 +195,7 @@ def test_connect_gmail_end_to_end(service, store, google):
     assert len(form["code_verifier"][0]) >= 43  # PKCE verifier sent with the exchange
 
     token = store.get(GMAIL_TOKEN)
-    assert token.secret["refresh_token"] == REFRESH and token.metadata == {"account": "ops@example.com"}
+    assert token.secret["refresh_token"] == REFRESH and token.metadata == {"account": "ops@example.com", "scopes": [READONLY]}
     assert token.updated_by == "test-admin@example.com"
 
     described = client.get("/api/integrations").json()
