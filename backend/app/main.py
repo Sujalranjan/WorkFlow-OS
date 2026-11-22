@@ -19,8 +19,10 @@ from app.api.integrations import router as integrations_router
 from app.api.jobs import router as jobs_router
 from app.api.learning import router as learning_router
 from app.api.semantic import router as semantic_router
+from app.http_security import SecurityHeadersMiddleware
 from app.logging_config import RequestLoggingMiddleware, setup_logging
 from app.config import (
+    API_DOCS_ENABLED,
     FRONTEND_ORIGINS,
     EMBEDDED_WORKER,
     MIGRATE_ON_START,
@@ -58,6 +60,9 @@ def create_app() -> FastAPI:
         version=VERSION,
         description="WorkFlowOS Backend Service",
         lifespan=lifespan,
+        docs_url="/docs" if API_DOCS_ENABLED else None,
+        redoc_url="/redoc" if API_DOCS_ENABLED else None,
+        openapi_url="/openapi.json" if API_DOCS_ENABLED else None,
         # Every route is checked against security.ROUTE_POLICY (unlisted routes are admin-only).
         dependencies=[Depends(authorize)],
     )
@@ -72,6 +77,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLoggingMiddleware, service="api")
 
     # Register routers

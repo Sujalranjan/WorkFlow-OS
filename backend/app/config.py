@@ -61,6 +61,10 @@ SESSION_COOKIE_NAME = "wfos_session"
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "12"))
 # Send the session cookie only over HTTPS. Set to true whenever the app is served over HTTPS.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
+# Largest request body the API accepts (bytes); larger requests get 413 before being read.
+MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
+# Interactive API docs at /docs and /redoc (switch off in production if not needed).
+API_DOCS_ENABLED = os.getenv("API_DOCS_ENABLED", "true").lower() in ("true", "1", "yes")
 LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "900"))
 # Browser origins allowed to call the API with credentials (the dashboard's address).

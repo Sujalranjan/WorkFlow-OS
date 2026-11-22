@@ -1,0 +1,59 @@
+name: Security
+
+# Dependency audits and static analysis. Separate from CI so a newly published advisory shows up
+# here (and weekly) without hiding test results; fix it with a dependency bump.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"  # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-dependencies:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: pip-audit
+        run: pip-audit -r backend/requirements.txt -r desktop-agent/requirements.txt
+
+  npm-dependencies:
+    name: npm dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: npm audit (high and critical)
+        run: npm audit --audit-level=high
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
