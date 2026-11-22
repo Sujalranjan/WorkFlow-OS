@@ -62,9 +62,19 @@ class DesktopAgent:
                 source_name=self.name,
             )
             self.collectors.extend([self.window_collector, self.file_collector])
+            # Optional: the team's shared folder, so saving a file there can be learned (files.save_to_folder)
+            shared = os.getenv("SHARED_FOLDER_DIRECTORY")
+            self.shared_folder_collector = (
+                FileSystemCollector(watch_directory=shared, callback=self.record_activity, source_name=self.name, folder_role="shared")
+                if shared
+                else None
+            )
+            if self.shared_folder_collector:
+                self.collectors.append(self.shared_folder_collector)
         else:
             self.window_collector = None
             self.file_collector = None
+            self.shared_folder_collector = None
 
         # Auto-dispatching background worker
         self.auto_dispatch = auto_dispatch

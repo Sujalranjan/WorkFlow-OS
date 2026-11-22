@@ -30,6 +30,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 | `hubspot.find_contact` | HubSpot contact record page or contacts-list search | HubSpotApiExecutor | low |
 | `hubspot.update_contact` | property saved on a HubSpot contact record | HubSpotApiExecutor | high, confirmation required |
 | `hubspot.add_note` | note saved on a HubSpot contact record | HubSpotApiExecutor | medium |
+| `files.save_to_folder` | file saved into the shared folder the desktop agent watches | SharedFolderExecutor | medium, never overwrites |
 | `slack.send_notification` | message sent in `app.slack.com/client/<team>/<channel>` | SlackApiExecutor | medium |
 
 - Events are classified deterministically (URL and metadata rules, with no LLM involved). A classified event becomes a DNA step such as `gmail:search_email` with `catalog_action` set. Its parameters (search query, customer, status, channel) become DNA variables.
@@ -159,6 +160,7 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 | Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
 | Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification). Add `channels:read` (and `groups:read` for private channels) to pick the channel from a list; without them, type the channel ID. Settings warns when the bot is not in the chosen channel. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | HubSpot | **Settings > Integrations > HubSpot** | Service key with `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read`; then choose the contact property that "Update contact" writes. `HUBSPOT_ACCESS_TOKEN` works as a fallback |
+| Shared folder | **Settings > Integrations > Shared folder** | A folder on the WorkFlowOS server (with Docker, mount it into the `api` and `worker` containers). `SHARED_FOLDER_PATH` works as a fallback. Set `SHARED_FOLDER_DIRECTORY` for the desktop agent so saving files there is observed |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
 
 **Connecting HubSpot:** in HubSpot, create a service key with the three contact scopes above (legacy private apps can no longer be created; an existing private-app token also works) and paste it in Settings. Saving checks the key. Then click **Choose property** to pick the contact property that "Update contact" steps write, and optionally a default value. Adding notes may need the notes scope on some accounts: if HubSpot refuses, the step is reported as blocked with `MISSING_SCOPE` and nothing else changes. Observing HubSpot in the browser is best effort, since HubSpot does not document its page structure; execution uses only the documented API.

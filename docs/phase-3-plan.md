@@ -116,7 +116,13 @@ Each with executor, verifier, observation rule and tests:
 - `sheets.append_row`: add a row to a Google Sheet (needs the Sheets scope on the Google sign-in).
 - `gmail.add_label`: label the processed email. Needs the opt-in `gmail.modify` scope; the label is
   the only change it can make (no sending, deleting, archiving or moving).
-- `files.save_to_folder`: copy the downloaded attachment to a configured shared folder.
+- `files.save_to_folder` (**done**): copy the downloaded attachment into the shared folder an admin
+  chooses in Settings (or `SHARED_FOLDER_PATH`). Only a file inside the run's own sandbox can be
+  copied; names are reduced to a plain file name; nothing is overwritten (`name (2).ext`, created
+  exclusively); the folder may not be WorkFlowOS's data or sandbox folder. Observed through the
+  desktop agent's optional `SHARED_FOLDER_DIRECTORY` watcher (events tagged `folder_role: shared`).
+  The verifier re-hashes the copy. Also: Slack's default status message no longer needs a CRM
+  customer (a Gmail -> folder -> Slack routine can report what it did).
 
 ### 3f: CI, docs, live tests
 - Live tests (`@pytest.mark.live`) for HubSpot and Slack OAuth against test accounts; mocked

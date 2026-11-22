@@ -28,6 +28,7 @@ from app.services.credential_store import (
     GMAIL_OAUTH_CLIENT,
     GMAIL_TOKEN,
     HUBSPOT,
+    SHARED_FOLDER,
     SLACK,
     CredentialStore,
     get_credential_store,
@@ -287,6 +288,39 @@ class IntegrationService:
     def remove_slack(self) -> None:
         self.store.delete(SLACK)
 
+    # ---------------------------------------------------------- shared folder
+
+    def save_shared_folder(self, folder: str, actor: str) -> Dict[str, Any]:
+        """Choose the folder files.save_to_folder copies into (a path on the WorkFlowOS server)."""
+        from app.services.shared_folder import SharedFolderError, check_folder
+
+        try:
+            resolved = check_folder(folder)
+        except SharedFolderError as e:
+            raise IntegrationError(str(e))
+        metadata = {"folder": str(resolved)}
+        self.store.put(SHARED_FOLDER, {}, metadata, actor)
+        return metadata
+
+    def remove_shared_folder(self) -> None:
+        self.store.delete(SHARED_FOLDER)
+
+    def _describe_shared_folder(self) -> Dict[str, Any]:
+        from app.services.shared_folder import configured_folder, folder_status
+
+        folder, source = configured_folder()
+        info = self.store.info(SHARED_FOLDER)
+        ready, detail = folder_status()
+        return {
+            "configured": bool(folder),
+            "source": source,
+            "folder": folder,
+            "ready": ready,
+            "detail": detail,
+            "updated_at": info.updated_at if info else None,
+            "updated_by": info.updated_by if info else None,
+        }
+
     # ---------------------------------------------------------------- hubspot
 
     def _hubspot_client(self, token: Optional[str] = None):
@@ -380,6 +414,7 @@ class IntegrationService:
                 "redirect_uri": self.redirect_uri,
             },
             "hubspot": self._describe_hubspot(),
+            "files": self._describe_shared_folder(),
             "slack": {
                 "configured": bool(slack) or env_slack,
                 "source": "settings" if slack else ("environment" if env_slack else None),

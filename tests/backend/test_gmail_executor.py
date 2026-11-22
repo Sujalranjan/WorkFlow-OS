@@ -270,12 +270,15 @@ def test_gmail_executor_capability_is_registered():
 
 
 def test_gmail_executor_is_only_newly_implemented_external_executor():
-    """2. Test external executors: ControlledLocal, GmailApi, CrmApi, HubSpotApi and SlackApi are implemented."""
+    """2. Only ControlledLocal and the executors declared by integrations are implemented."""
+    from app.integrations import INTEGRATIONS
+
     registry = ExecutorRegistry()
     caps = registry.get_all_capabilities()
     implemented_caps = [c for c in caps if c.implemented]
     names = {c.executor_name for c in implemented_caps}
-    implemented = {"ControlledLocalExecutor", "GmailApiExecutor", "CrmApiExecutor", "HubSpotApiExecutor", "SlackApiExecutor"}
+    implemented = {"ControlledLocalExecutor"} | {make().name for i in INTEGRATIONS for make in i.executors}
+    assert {"GmailApiExecutor", "CrmApiExecutor", "HubSpotApiExecutor", "SharedFolderExecutor", "SlackApiExecutor"} <= implemented
     assert names == implemented
 
     # All other external executors (e.g. Browser, UI) remain unimplemented

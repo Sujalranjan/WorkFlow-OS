@@ -439,6 +439,11 @@ class ExecutionEngine:
                     if step_result.output.get("note_id"):
                         context.resolved_parameters["note_id"] = step_result.output.get("note_id")
 
+                elif act_norm == "save_to_folder":
+                    if step_result.output.get("saved_path"):
+                        context.resolved_parameters["saved_file"] = step_result.output.get("saved_path")
+                        context.resolved_parameters["saved_file_name"] = step_result.output.get("file_name")
+
                 elif act_norm in ("update_customer_record", "update_customer"):
                     cust = step_result.output.get("customer")
                     if cust and isinstance(cust, dict):

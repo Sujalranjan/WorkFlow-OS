@@ -51,6 +51,8 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("POST", "/api/integrations/gmail/connect"): AD,
     ("GET", "/api/integrations/gmail/callback"): PUBLIC,
     ("DELETE", "/api/integrations/gmail"): AD,
+    ("PUT", "/api/integrations/files"): AD,
+    ("DELETE", "/api/integrations/files"): AD,
     ("PUT", "/api/integrations/hubspot"): AD,
     ("GET", "/api/integrations/hubspot/properties"): AD,
     ("PUT", "/api/integrations/hubspot/settings"): AD,

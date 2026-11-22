@@ -32,6 +32,7 @@ GMAIL_TOKEN = "gmail"
 GMAIL_OAUTH_CLIENT = "gmail_oauth_client"
 SLACK = "slack"
 HUBSPOT = "hubspot"
+SHARED_FOLDER = "files"  # non-secret: only metadata {"folder"}
 OAUTH_STATE_TTL = timedelta(minutes=10)
 
 

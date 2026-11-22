@@ -88,7 +88,7 @@ Create a Slack app with a bot token that has `chat:write` (and `channels:history
   python -m desktop_agent.agent
   ```
 
-  Settings: `WORKFLOWOS_API_KEY` (create it in **Settings → API keys**), `ENABLE_REAL_COLLECTION`, `WINDOW_POLL_INTERVAL`, `WINDOW_DEBOUNCE_SECONDS`, `FILE_WATCH_DIRECTORY`, `BACKEND_API_URL`.
+  Settings: `WORKFLOWOS_API_KEY` (create it in **Settings → API keys**), `ENABLE_REAL_COLLECTION`, `WINDOW_POLL_INTERVAL`, `WINDOW_DEBOUNCE_SECONDS`, `FILE_WATCH_DIRECTORY`, `SHARED_FOLDER_DIRECTORY` (optional: the team's shared folder, so saving a file there is learned as `files.save_to_folder`), `BACKEND_API_URL`.
 
 - **Browser extension** (Gmail searches and downloads, CRM pages and updates, Slack sends): open `chrome://extensions`, enable Developer mode, choose *Load unpacked* and select `desktop-agent/browser_extension`. In its options page, set the backend URL and paste an API key. It never reads email bodies, attachment contents or message text.
 

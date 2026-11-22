@@ -326,6 +326,16 @@ export interface Integrations {
     updated_at: string | null;
     updated_by: string | null;
   };
+  files: {
+    configured: boolean;
+    source: 'settings' | 'environment' | null;
+    folder: string | null;
+    /** The folder exists and WorkFlowOS can write to it (checked on every load). */
+    ready: boolean;
+    detail: string;
+    updated_at: string | null;
+    updated_by: string | null;
+  };
   hubspot: {
     configured: boolean;
     source: 'settings' | 'environment' | null;
@@ -378,3 +388,6 @@ export const saveHubSpotSettings = (status_property: string, status_value: strin
     body: JSON.stringify({ status_property, status_value }),
   });
 export const removeHubSpot = () => request<Integrations>('/api/integrations/hubspot', { method: 'DELETE' });
+export const saveSharedFolder = (folder: string) =>
+  request<Integrations>('/api/integrations/files', { method: 'PUT', body: JSON.stringify({ folder }) });
+export const removeSharedFolder = () => request<Integrations>('/api/integrations/files', { method: 'DELETE' });

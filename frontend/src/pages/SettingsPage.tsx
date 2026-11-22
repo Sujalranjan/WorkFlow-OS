@@ -15,11 +15,13 @@ import {
   listUsers,
   removeGmailClient,
   removeHubSpot,
+  removeSharedFolder,
   removeSlack,
   revokeApiKey,
   saveGmailClient,
   saveHubSpot,
   saveHubSpotSettings,
+  saveSharedFolder,
   saveSlack,
   startGmailConnect,
   updateUser,
@@ -325,6 +327,7 @@ const IntegrationsSection: React.FC = () => {
         <>
           <GmailCard info={info.data} action={action} update={update} />
           <HubSpotCard info={info.data} action={action} update={update} />
+          <SharedFolderCard info={info.data} action={action} update={update} />
           <SlackCard info={info.data} action={action} update={update} />
         </>
       )}
@@ -798,6 +801,96 @@ const HubSpotCard: React.FC<CardProps> = ({ info, action, update }) => {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+};
+
+const SharedFolderCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const f = info.files;
+  const [folder, setFolder] = useState('');
+  const [editing, setEditing] = useState(false);
+  const busy = action.busy !== null;
+  const showForm = !f.configured || editing;
+
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Shared folder</h3>
+        {!f.configured ? (
+          <Badge status="paused" label="Not set up" />
+        ) : f.ready ? (
+          <Badge status="completed" label="Ready" />
+        ) : (
+          <Badge status="failed" label="Unavailable" />
+        )}
+      </div>
+      {f.configured && (
+        <p className="muted small">
+          Saving into <code>{f.folder}</code>
+          {f.source === 'settings'
+            ? ` · chosen by ${f.updated_by || 'unknown'} ${timeAgo(f.updated_at)}`
+            : ' · from SHARED_FOLDER_PATH on the server'}
+        </p>
+      )}
+      {f.configured && !f.ready && <Alert>{f.detail}</Alert>}
+      {showForm ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update(action.run('files-save', () => saveSharedFolder(folder), 'Shared folder saved.')).then(() => {
+              setFolder('');
+              setEditing(false);
+            });
+          }}
+        >
+          <p className="muted small">
+            "Save to folder" steps copy the file a run downloaded into this folder. Files are never overwritten: if the name is
+            taken, the copy is saved as <code>name (2).pdf</code>. Use the full path on the WorkFlowOS server (with Docker, a
+            folder mounted into the api and worker containers).
+          </p>
+          <label className="field">
+            Folder path
+            <input required value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="D:\Shared\Invoices" />
+          </label>
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              Check and save
+            </button>
+            {editing && (
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        <div className="actions">
+          <button
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => {
+              setFolder(f.folder || '');
+              setEditing(true);
+            }}
+          >
+            Change
+          </button>
+          {f.source === 'settings' && (
+            <button
+              className="btn-danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Stop using this folder? "Save to folder" steps are blocked until a folder is chosen again.')) {
+                  update(action.run('files-remove', removeSharedFolder, 'Shared folder cleared.'));
+                }
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

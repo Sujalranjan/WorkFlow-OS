@@ -35,6 +35,7 @@ class FileActivityHandler(FileSystemEventHandler):
                 "file_path": file_path,
                 "directory": self.collector.watch_directory,
                 "collector": "FileSystemCollector",
+                **self.collector.role_metadata(),
             },
         )
         self.collector.emit(activity_event)
@@ -63,6 +64,7 @@ class FileActivityHandler(FileSystemEventHandler):
                 "directory": self.collector.watch_directory,
                 "is_download_completed": is_download_completed,
                 "collector": "FileSystemCollector",
+                **self.collector.role_metadata(),
             },
         )
         self.collector.emit(activity_event)
@@ -76,8 +78,11 @@ class FileSystemCollector(BaseCollector):
         watch_directory: Optional[str] = None,
         callback: Optional[EventCallback] = None,
         source_name: str = "desktop_agent",
+        folder_role: Optional[str] = None,
     ) -> None:
         super().__init__(callback=callback, source_name=source_name)
+        # e.g. "shared": files appearing here are reported as saved to the team's shared folder
+        self.folder_role = folder_role
         # Default to a safe 'watch_folder' within the current working directory if not specified
         self.watch_directory = os.path.abspath(
             watch_directory
@@ -86,6 +91,9 @@ class FileSystemCollector(BaseCollector):
         )
         self._observer: Optional[Observer] = None
         self._lock = threading.Lock()
+
+    def role_metadata(self) -> dict:
+        return {"folder_role": self.folder_role} if self.folder_role else {}
 
     def start(self) -> None:
         """Ensure directory exists and start watchdog observer."""

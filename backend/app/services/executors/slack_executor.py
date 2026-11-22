@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 def _default_message(params: dict) -> str:
     """Status message built from what this run actually did."""
-    customer = params.get("customer_name") or params.get("customer_id") or "the customer"
+    customer = params.get("customer_name") or params.get("customer_id") or params.get("customer_email") or "the customer"
     lines = [f"Request processed for {customer}"]
     if params.get("email_subject"):
         lines.append(f"Email: {params['email_subject']}")
@@ -52,6 +52,8 @@ def _default_message(params: dict) -> str:
         lines.append(f"CRM status: {params['customer_status']}")
     if params.get("filename"):
         lines.append(f"Attachment: {params['filename']}")
+    if params.get("saved_file_name"):
+        lines.append(f"Saved to the shared folder as: {params['saved_file_name']}")
     return "\n".join(lines)
 
 
@@ -106,7 +108,11 @@ class SlackApiExecutor(BaseExecutor):
                 merged[k] = v
         params = merged
         msg = params.get("message") or params.get("text") or params.get("content")
-        has_context_entity = bool(params.get("customer_id") or params.get("customer_name") or params.get("customer"))
+        # Without an explicit message, the default one describes what this run did; it needs something to say.
+        has_context_entity = any(
+            params.get(k)
+            for k in ("customer_id", "customer_name", "customer", "customer_email", "email_subject", "filename", "saved_file_name")
+        )
         if not msg and not context.dry_run and not has_context_entity:
             errors.append("Required parameter 'message' or 'text' is missing for send_notification.")
 

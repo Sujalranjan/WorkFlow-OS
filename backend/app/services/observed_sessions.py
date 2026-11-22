@@ -131,3 +131,46 @@ def build_observed_hubspot_events(start: datetime = datetime(2026, 11, 2, 9, 0, 
     for i, (s, contact_id) in enumerate(zip(SESSIONS, HUBSPOT_CONTACT_IDS)):
         events.extend(build_hubspot_session_events(start + timedelta(hours=i), contact_id, s["email"], s["invoice"], s["msg"]))
     return events
+
+
+SHARED_FOLDER_DIR = r"S:\Team\Invoices"  # what the desktop agent watches with SHARED_FOLDER_DIRECTORY
+
+
+def build_folder_session_events(start: datetime, invoice: str, msg: str) -> List[ActivityEvent]:
+    """Gmail search + attachment -> the file is put into the team's shared folder -> Slack."""
+    t = start
+    step = timedelta(seconds=7)
+    return [
+        _event(t, ActivityEventType.WINDOW_FOCUSED, "Gmail", window_title="Inbox - Gmail - Google Chrome"),
+        _event(t + step, ActivityEventType.BROWSER_NAVIGATION, "Google Chrome", url=GMAIL_SEARCH_URL),
+        _event(t + 2 * step, ActivityEventType.BROWSER_NAVIGATION, "Google Chrome", url=f"{GMAIL_SEARCH_URL}/{msg}"),
+        _event(
+            t + 3 * step,
+            ActivityEventType.FILE_DOWNLOADED,
+            "Google Chrome",
+            url="https://mail.google.com/mail/u/0?ui=2&ik=4f1c2&attid=0.1&disp=safe",
+            file_name=invoice,
+        ),
+        ActivityEvent(
+            event_type=ActivityEventType.FILE_CREATED,
+            timestamp=t + 4 * step,
+            application="File System",
+            source="desktop_agent",
+            metadata={
+                "file_name": invoice,
+                "file_path": SHARED_FOLDER_DIR + "\\" + invoice,
+                "directory": SHARED_FOLDER_DIR,
+                "collector": "FileSystemCollector",
+                "folder_role": "shared",
+            },
+        ),
+        _event(t + 5 * step, ActivityEventType.WINDOW_FOCUSED, "Slack", window_title="ops-replacements (Channel) - Slack"),
+        _event(t + 6 * step, ActivityEventType.FORM_SUBMITTED, "Google Chrome", url=f"https://app.slack.com/client/T0WORKFLOW/{SLACK_CHANNEL}"),
+    ]
+
+
+def build_observed_folder_events(start: datetime = datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)) -> List[ActivityEvent]:
+    events: List[ActivityEvent] = []
+    for i, s in enumerate(SESSIONS):
+        events.extend(build_folder_session_events(start + timedelta(hours=i), s["invoice"], s["msg"]))
+    return events
