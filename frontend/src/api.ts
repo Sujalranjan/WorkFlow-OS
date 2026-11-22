@@ -416,6 +416,8 @@ export interface Integrations {
     channel_name: string | null;
     /** Whether the bot was in the channel when it was saved; null when the token cannot tell. */
     bot_in_channel: boolean | null;
+    alert_channel_id: string | null;
+    alert_on_pending: boolean;
     team: string | null;
     updated_at: string | null;
     updated_by: string | null;
@@ -490,3 +492,33 @@ export const saveGmailOptions = (options: { allow_labels?: boolean; allow_sheets
 export const saveSheet = (spreadsheet: string, sheet: string, columns: string[]) =>
   request<Integrations>('/api/integrations/sheets', { method: 'PUT', body: JSON.stringify({ spreadsheet, sheet, columns }) });
 export const removeSheet = () => request<Integrations>('/api/integrations/sheets', { method: 'DELETE' });
+
+// --- monitoring -------------------------------------------------------------------
+
+export interface JobSummary {
+  job_id: string;
+  kind: string;
+  status: string;
+  last_error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+export interface SystemOverview {
+  version: string;
+  database: string;
+  ready: boolean;
+  checks: { database?: boolean; migrations?: boolean; worker?: boolean };
+  embedded_worker: boolean;
+  workers: { name: string; kind: string; last_seen: string; alive: boolean }[];
+  jobs: Record<string, number>;
+  executions: Record<string, number>;
+  triggered_runs: Record<string, number>;
+  needs_attention: JobSummary[];
+  failed_jobs: JobSummary[];
+  triggers: { trigger_id: string; name: string; enabled: boolean; last_polled_at: string | null; last_error: string | null; last_note: string | null }[];
+  metrics_enabled: boolean;
+  alerts: { channel_id: string | null; notify_pending: boolean };
+}
+export const getSystem = () => request<SystemOverview>('/api/system');
+export const saveSlackAlerts = (channel_id: string | null, notify_pending: boolean) =>
+  request<Integrations>('/api/integrations/slack/alerts', { method: 'PUT', body: JSON.stringify({ channel_id, notify_pending }) });

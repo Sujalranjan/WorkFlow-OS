@@ -26,6 +26,7 @@ import {
   saveSharedFolder,
   saveSheet,
   saveSlack,
+  saveSlackAlerts,
   startGmailConnect,
   updateUser,
 } from '../api';
@@ -333,6 +334,7 @@ const IntegrationsSection: React.FC = () => {
           <SharedFolderCard info={info.data} action={action} update={update} />
           <SheetsCard info={info.data} action={action} update={update} />
           <SlackCard info={info.data} action={action} update={update} />
+          <SlackAlertsCard info={info.data} action={action} update={update} />
         </>
       )}
     </section>
@@ -1091,6 +1093,52 @@ const SheetsCard: React.FC<CardProps> = ({ info, action, update }) => {
           </div>
         )
       )}
+    </div>
+  );
+};
+
+const SlackAlertsCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const sl = info.slack;
+  const [channel, setChannel] = useState(sl.alert_channel_id || '');
+  const [pending, setPending] = useState(sl.alert_on_pending);
+  const busy = action.busy !== null;
+  if (!sl.configured || sl.source !== 'settings') return null;
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>Alerts</h3>
+        {sl.alert_channel_id ? <Badge status="completed" label="On" /> : <Badge status="paused" label="Off" />}
+      </div>
+      <p className="muted small">
+        Post a message to a Slack channel when something needs a person: a job stopped after it may have changed an external
+        system, an email-triggered run failed or was blocked, or an email trigger cannot check Gmail. Alerts name the workflow
+        and link to the dashboard; they never include email contents. Invite the bot to the channel.
+      </p>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          update(
+            action.run('slack-alerts', () => saveSlackAlerts(channel.trim() || null, pending), channel.trim() ? 'Alerts saved.' : 'Alerts turned off.'),
+          );
+        }}
+      >
+        <div className="form-row">
+          <label className="field">
+            Alert channel ID (empty = off)
+            <input value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="C0123456789" />
+          </label>
+        </div>
+        <label className="checkbox">
+          <input type="checkbox" checked={pending} onChange={(e) => setPending(e.target.checked)} /> Also tell me when new emails
+          wait for run approval
+        </label>
+        <div className="actions">
+          <button type="submit" disabled={busy}>
+            Save alerts
+          </button>
+        </div>
+      </form>
     </div>
   );
 };

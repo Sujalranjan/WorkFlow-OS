@@ -296,6 +296,8 @@ def test_slack_settings_are_validated_and_used_by_the_client(service, store, goo
         "channel_id": "C0123456789",
         "channel_name": "ops",
         "bot_in_channel": True,
+        "alert_channel_id": None,
+        "alert_on_pending": True,
         "team": "Acme",
         "updated_at": ok.json()["slack"]["updated_at"],
         "updated_by": "test-admin@example.com",

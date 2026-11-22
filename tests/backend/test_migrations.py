@@ -105,8 +105,15 @@ def test_workflow_versions_migration(tmp_path):
     target = _fresh(tmp_path)
     migrate.upgrade(target, revision="0002")
     assert "workflow_versions" not in inspect(db.get_engine(target, create_tables=False)).get_table_names()
-    assert migrate.upgrade(target) == "0003"
+    assert migrate.upgrade(target, revision="0003") == "0003"
     assert "workflow_versions" in inspect(db.get_engine(target, create_tables=False)).get_table_names()
+
+
+def test_heartbeats_migration_reaches_head(tmp_path):
+    target = _fresh(tmp_path)
+    migrate.upgrade(target, revision="0003")
+    assert migrate.upgrade(target) == "0004"
+    assert "service_heartbeats" in inspect(db.get_engine(target, create_tables=False)).get_table_names()
     assert migrate.pending_changes(target) == []
 
 

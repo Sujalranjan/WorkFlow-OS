@@ -57,6 +57,11 @@ class SharedFolderRequest(BaseModel):
     folder: str = Field(..., min_length=1, max_length=1000)
 
 
+class SlackAlertsRequest(BaseModel):
+    channel_id: Optional[str] = Field(default=None, max_length=80)
+    notify_pending: bool = True
+
+
 class SlackChannelsRequest(BaseModel):
     # A token being set up (POST body, never a URL), or omitted to use the saved one.
     bot_token: Optional[str] = Field(default=None, min_length=10, max_length=300)
@@ -160,6 +165,16 @@ def list_slack_channels(req: SlackChannelsRequest) -> Dict[str, Any]:
         return get_integration_service().slack_channels(req.bot_token)
     except IntegrationError as e:
         raise _bad_request(e)
+
+
+@router.put("/slack/alerts")
+def save_slack_alerts(req: SlackAlertsRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_slack_alerts(req.channel_id, req.notify_pending, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
 
 
 @router.delete("/slack")

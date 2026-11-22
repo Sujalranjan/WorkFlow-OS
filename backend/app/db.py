@@ -239,6 +239,18 @@ oauth_states = Table(
 )
 
 
+# --------------------------------------------------------------- monitoring
+
+# Last time each worker (or other background service) was alive, for readiness and the System page.
+service_heartbeats = Table(
+    "service_heartbeats",
+    metadata,
+    Column("name", Text, primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("last_seen", Text, nullable=False),
+    Column("info", Document, nullable=False),
+)
+
 # ------------------------------------------------------------------------ jobs
 
 jobs = Table(

@@ -368,6 +368,17 @@ class IntegrationService:
         self.store.put(SLACK, {"bot_token": token}, metadata, actor)
         return metadata
 
+    def save_slack_alerts(self, channel_id: Optional[str], notify_pending: bool, actor: str) -> None:
+        """Where operational alerts go (a channel the bot is in), or None to turn alerts off."""
+        from app.services.slack_client import CHANNEL_REGEX
+
+        if not self.store.info(SLACK):
+            raise IntegrationError("Save the Slack bot token first.")
+        channel = (channel_id or "").strip() or None
+        if channel and not CHANNEL_REGEX.match(channel):
+            raise IntegrationError("Enter a channel ID such as C0123456789.")
+        self.store.update_metadata(SLACK, {"alert_channel_id": channel, "alert_on_pending": bool(notify_pending)}, actor)
+
     def remove_slack(self) -> None:
         self.store.delete(SLACK)
 
@@ -513,6 +524,8 @@ class IntegrationService:
                 "channel_name": slack.metadata.get("channel_name") if slack else None,
                 # True/False as checked when saved; None when unknown (token without channels:read)
                 "bot_in_channel": slack.metadata.get("bot_in_channel") if slack else None,
+                "alert_channel_id": slack.metadata.get("alert_channel_id") if slack else (config.ALERT_SLACK_CHANNEL or None),
+                "alert_on_pending": bool(slack.metadata.get("alert_on_pending", True)) if slack else True,
                 "team": slack.metadata.get("team") if slack else None,
                 "updated_at": slack.updated_at if slack else None,
                 "updated_by": slack.updated_by if slack else None,

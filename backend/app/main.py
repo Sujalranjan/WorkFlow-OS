@@ -18,6 +18,7 @@ from app.api.health import router as health_router
 from app.api.integrations import router as integrations_router
 from app.api.jobs import router as jobs_router
 from app.api.learning import router as learning_router
+from app.api.monitoring import router as monitoring_router
 from app.api.semantic import router as semantic_router
 from app.http_security import SecurityHeadersMiddleware
 from app.logging_config import RequestLoggingMiddleware, setup_logging
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
 
     # Register routers
     app.include_router(health_router)
+    app.include_router(monitoring_router)
     app.include_router(auth_router)
     app.include_router(integrations_router)
     app.include_router(demo_router)

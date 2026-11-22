@@ -47,6 +47,7 @@ class Worker:
             config.TRIGGER_POLLER_ENABLED if schedule_trigger_polls is None else schedule_trigger_polls
         )
         self._last_poll_scheduled = 0.0
+        self._last_heartbeat = 0.0
         self.stop_event = threading.Event()
 
     # --------------------------------------------------------------- one job
@@ -92,8 +93,22 @@ class Worker:
 
     # ------------------------------------------------------------------ loop
 
+    def _record_heartbeat(self) -> None:
+        """Tell monitoring this worker is alive (throttled; never fails the loop)."""
+        now = time.monotonic()
+        if now - self._last_heartbeat < config.WORKER_HEARTBEAT_SECONDS:
+            return
+        self._last_heartbeat = now
+        try:
+            from app.services.monitoring import MonitoringRepository
+
+            MonitoringRepository().heartbeat(self.worker_id, "worker", {"pid": os.getpid(), "host": socket.gethostname()})
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not record the worker heartbeat")
+
     def tick(self) -> bool:
         """One round: recover abandoned jobs, schedule polling, run one job. True if a job ran."""
+        self._record_heartbeat()
         for job in self.queue.recover_expired():
             if job.status == JobStatus.NEEDS_ATTENTION:
                 job_kinds.on_needs_attention(job)

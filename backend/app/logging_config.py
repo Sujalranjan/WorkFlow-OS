@@ -88,6 +88,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = rid
             return response
         finally:
+            route = request.scope.get("route")
+            try:
+                from app.services.monitoring import observe_request
+
+                observe_request(request.method, getattr(route, "path", "unmatched"), status, time.perf_counter() - start)
+            except Exception:  # noqa: BLE001 - metrics never break a request
+                pass
             self.logger.info(
                 "%s %s %s",
                 request.method,

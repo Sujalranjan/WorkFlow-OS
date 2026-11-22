@@ -146,6 +146,7 @@ class TriggerService:
         trigger = self._require_trigger(trigger_id)
         now = datetime.now(timezone.utc).isoformat()
         result = PollResult(trigger_id=trigger.trigger_id, polled_at=now)
+        was_failing = bool(trigger.last_error)
 
         error: Optional[str] = None
         if not self.gmail.is_configured():
@@ -164,8 +165,13 @@ class TriggerService:
         trigger.last_note = result.note
         self.repo.save_trigger(trigger)
         result.error = error
+        from app.services import alerts
+
+        if error and not was_failing:  # alert once, when it starts failing
+            alerts.trigger_failing(trigger.name, error)
         if result.new_runs:
             logger.info("Trigger %s queued %d run(s) for approval", trigger.trigger_id, len(result.new_runs))
+            alerts.runs_waiting(trigger.name, len(result.new_runs))
         return result
 
     def _sync(self, trigger: EmailTrigger, result: PollResult) -> None:
@@ -283,7 +289,9 @@ class TriggerService:
             logger.warning("Run %s could not execute: %s", run_id, e)
             run.status = RunStatus.FAILED
             run.error = str(e)
-            return self.repo.save_run(run)
+            saved = self.repo.save_run(run)
+            self._alert_problem(saved)
+            return saved
 
         return self._sync_from_execution(run, record)
 
@@ -376,7 +384,17 @@ class TriggerService:
 
         if run.status != RunStatus.NEEDS_INPUT:
             run.verification_status = self._verify_and_learn(run, record)
-        return self.repo.save_run(run)
+        saved = self.repo.save_run(run)
+        self._alert_problem(saved)
+        return saved
+
+    def _alert_problem(self, run: WorkflowRun) -> None:
+        if run.status not in (RunStatus.FAILED, RunStatus.BLOCKED):
+            return
+        from app.services import alerts
+
+        spec = self.spec_repo.get_by_id(run.workflow_id)
+        alerts.run_problem(spec.title if spec else run.workflow_id, run.run_id, run.status.value, run.error)
 
     def _verify_and_learn(self, run: WorkflowRun, record: ExecutionAuditRecord) -> Optional[str]:
         """Independent verification and reliability analysis; failures here never change the run outcome."""

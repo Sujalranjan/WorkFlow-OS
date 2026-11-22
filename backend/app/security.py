@@ -33,6 +33,11 @@ V, A, AD = Role.VIEWER, Role.APPROVER, Role.ADMIN
 
 ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("GET", "/health"): PUBLIC,
+    ("GET", "/health/ready"): PUBLIC,
+    # Public route, but /metrics itself requires METRICS_TOKEN (and is off without it).
+    ("GET", "/metrics"): PUBLIC,
+    ("GET", "/api/system"): AD,
+    ("PUT", "/api/integrations/slack/alerts"): AD,
     ("POST", "/api/auth/login"): PUBLIC,
     ("POST", "/api/auth/logout"): SIGNED_IN,
     ("GET", "/api/auth/me"): SIGNED_IN,

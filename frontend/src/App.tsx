@@ -9,6 +9,7 @@ import { InboxPage } from './pages/InboxPage';
 import { AutomationsPage } from './pages/AutomationsPage';
 import { RunsPage } from './pages/RunsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SystemPage } from './pages/SystemPage';
 import { LoginPage } from './pages/LoginPage';
 
 const NAV = [
@@ -88,11 +89,14 @@ const SignedInApp: React.FC<{ session: Session; onSignedOut: () => void }> = ({ 
     case 'settings':
       content = isAdmin ? <SettingsPage /> : <p className="muted">Only admins can open Settings.</p>;
       break;
+    case 'system':
+      content = isAdmin ? <SystemPage /> : <p className="muted">Only admins can open System.</p>;
+      break;
     default:
       content = <OverviewPage inboxCount={inboxCount} />;
   }
 
-  const nav = isAdmin ? [...NAV, { id: 'settings', label: 'Settings' }] : NAV;
+  const nav = isAdmin ? [...NAV, { id: 'system', label: 'System' }, { id: 'settings', label: 'Settings' }] : NAV;
 
   return (
     <SessionContext.Provider value={info}>

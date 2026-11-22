@@ -46,6 +46,13 @@ EMBEDDED_WORKER = os.getenv("EMBEDDED_WORKER", "true").lower() in ("true", "1", 
 JOBS_INLINE = os.getenv("JOBS_INLINE", "false").lower() in ("true", "1", "yes")
 WORKER_LEASE_SECONDS = float(os.getenv("WORKER_LEASE_SECONDS", "60"))
 WORKER_POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "1"))
+# A worker not seen for this long is reported as down (readiness, System page, metrics).
+WORKER_STALE_SECONDS = float(os.getenv("WORKER_STALE_SECONDS", "90"))
+WORKER_HEARTBEAT_SECONDS = float(os.getenv("WORKER_HEARTBEAT_SECONDS", "15"))
+# Prometheus metrics at /metrics, only for a caller sending "Authorization: Bearer <METRICS_TOKEN>".
+METRICS_TOKEN = os.getenv("METRICS_TOKEN", "").strip()
+# Slack channel for operational alerts when not set in Settings (Settings wins).
+ALERT_SLACK_CHANNEL = os.getenv("ALERT_SLACK_CHANNEL", "").strip()
 # Attempts for jobs that are safe to retry (live runs are never retried)
 JOB_MAX_ATTEMPTS = int(os.getenv("JOB_MAX_ATTEMPTS", "3"))
 

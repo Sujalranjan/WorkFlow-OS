@@ -136,6 +136,9 @@ HANDLERS: Dict[str, Handler] = {
 def on_needs_attention(job: Job) -> None:
     """Make the interruption visible where people look (the run in the Inbox, the execution record)."""
     reason = job.last_error or "Interrupted while it may have changed external systems."
+    from app.services import alerts
+
+    alerts.job_needs_attention(job.kind, job.job_id, reason)
     try:
         if job.kind in ("execute_run", "resume_run"):
             _trigger_service().mark_interrupted(job.payload["run_id"], reason)

@@ -63,6 +63,8 @@ if not LIVE_TESTS:
         # a real shared folder must never receive test files
         "SHARED_FOLDER_PATH",
         "SHARED_FOLDER_DIRECTORY",
+        "ALERT_SLACK_CHANNEL",
+        "METRICS_TOKEN",
     ):
         os.environ.pop(_secret, None)
     os.environ["GMAIL_ENABLED"] = "false"
