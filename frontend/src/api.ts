@@ -60,13 +60,17 @@ export interface IntegrationState {
   connected: boolean;
   detail: string;
 }
-export interface SystemStatus {
-  gmail: IntegrationState;
-  slack: IntegrationState;
-  crm: IntegrationState;
+export interface IntegrationInfo {
+  key: string;
+  name: string;
+  role: string;
+}
+/** One entry per integration key (gmail, crm, slack, ...) plus `ai`. */
+export type SystemStatus = {
   ai: IntegrationState;
   email_polling: boolean;
-}
+  integrations: IntegrationInfo[];
+} & Record<string, IntegrationState | boolean | IntegrationInfo[] | undefined>;
 export const getStatus = () => request<SystemStatus>('/api/status');
 
 // --- activity & discovery -----------------------------------------------------------

@@ -1,5 +1,5 @@
 import React from 'react';
-import { dismissJob, getStatus, listEvents, listExecutions, listJobs, listTriggers, listWorkflows } from '../api';
+import { IntegrationInfo, IntegrationState, dismissJob, getStatus, listEvents, listExecutions, listJobs, listTriggers, listWorkflows } from '../api';
 import { Alert, Badge, PageHeader, href, timeAgo, useAction, useLoad, useSession } from '../ui';
 
 const JOB_LABEL: Record<string, string> = {
@@ -57,12 +57,13 @@ interface Props {
   inboxCount: number;
 }
 
-const INTEGRATIONS: { key: 'gmail' | 'crm' | 'slack' | 'ai'; name: string; role: string }[] = [
+// Shown while /api/status loads; afterwards the server's list (every integration it knows) is used.
+const DEFAULT_INTEGRATIONS: IntegrationInfo[] = [
   { key: 'gmail', name: 'Gmail', role: 'Reads request emails and attachments' },
   { key: 'crm', name: 'CRM', role: 'Looks up and updates customers' },
   { key: 'slack', name: 'Slack', role: 'Notifies your team' },
-  { key: 'ai', name: 'AI interpreter', role: 'Describes discovered routines' },
 ];
+const AI: IntegrationInfo = { key: 'ai', name: 'AI interpreter', role: 'Describes discovered routines' };
 
 export const OverviewPage: React.FC<Props> = ({ inboxCount }) => {
   const status = useLoad(getStatus, [], 30000);
@@ -176,8 +177,8 @@ export const OverviewPage: React.FC<Props> = ({ inboxCount }) => {
           <h2>Connections</h2>
           {status.error && <Alert>{status.error}</Alert>}
           <ul className="integrations">
-            {INTEGRATIONS.map((i) => {
-              const st = status.data?.[i.key];
+            {[...(status.data?.integrations || DEFAULT_INTEGRATIONS), AI].map((i) => {
+              const st = status.data?.[i.key] as IntegrationState | undefined;
               return (
                 <li key={i.key}>
                   <span className={`dot ${st ? (st.connected ? 'dot-on' : 'dot-off') : ''}`} aria-hidden="true" />

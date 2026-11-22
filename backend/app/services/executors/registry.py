@@ -10,9 +10,6 @@ from app.models.execution_plan import ExecutionStrategy, PlannedStep
 from app.models.strategy import ExecutionStrategyType, ExecutorCapability
 from app.services.executors.base import BaseExecutor
 from app.services.executors.controlled_local import ControlledLocalExecutor
-from app.services.executors.crm_executor import CrmApiExecutor
-from app.services.executors.gmail_executor import GmailApiExecutor
-from app.services.executors.slack_executor import SlackApiExecutor
 from app.services.executors.unimplemented import (
     AccessibilityUiExecutor,
     ApiIntegrationExecutor,
@@ -30,16 +27,14 @@ class ExecutorRegistry:
         # 1. Register implemented executor (local filesystem sandbox)
         self.register(ControlledLocalExecutor())
 
-        # 2. Register & 15A implemented external executor (Gmail API)
-        self.register(GmailApiExecutor())
+        # 2. Executors of every integration (Gmail, CRM, Slack, ...), declared in app/integrations/
+        from app.integrations import INTEGRATIONS
 
-        # 3. Register implemented external executor (CRM API)
-        self.register(CrmApiExecutor())
+        for integration in INTEGRATIONS:
+            for make_executor in integration.executors:
+                self.register(make_executor())
 
-        # 4. Register implemented external executor (Slack API)
-        self.register(SlackApiExecutor())
-
-        # 5. Register architecturally represented (unimplemented) executors
+        # 3. Register architecturally represented (unimplemented) executors
         self.register(ApiIntegrationExecutor())
         self.register(ApplicationIntegrationExecutor())
         self.register(AccessibilityUiExecutor())

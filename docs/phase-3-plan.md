@@ -44,11 +44,20 @@ Scope stays "production-ready for one team".
 
 Each one is mergeable on its own, with tests on SQLite and Postgres.
 
-### 3a: Integration framework (no behaviour change)
-- `app/integrations/` with one module per tool (gmail, slack, demo_crm) that declares credentials,
-  status, catalog actions, classifier rules, executor and verifier.
-- Catalog, `classify_event`, executor/verifier registries, `/api/status` and the Settings page are
-  generated from these definitions. Existing tests must pass unchanged.
+### 3a: Integration framework (done, no behaviour change)
+- `app/integrations/` with `base.py` (`Integration`, `CatalogAction`, `CatalogParameter`,
+  `ClassifiedAction`, URL helpers) and one module per tool: `gmail.py`, `demo_crm.py`, `slack.py`.
+  Each declares its actions, classifiers, executor and verifier factories, and a status check.
+- `action_catalog.py` keeps its public API but assembles the catalog and classification from
+  `INTEGRATIONS`; executor and verifier registries and `/api/status` iterate over it.
+  `/api/status` also returns the integration list, and the Overview page renders it, so new tools
+  appear without frontend changes.
+- Behaviour-neutral, verified by a before/after snapshot: the same 5 actions and identical
+  classification of 75 sample events, with the existing suite passing unchanged.
+- `tests/backend/test_integrations_framework.py` enforces the rules for every integration:
+  namespaced action ids, executor provided and declaring the action, registry membership,
+  classifiers that only return their own actions and never overlap, and a broken status check
+  that doesn't hide the others.
 
 ### 3b: Gmail incremental sync (fixes the missed-email bug)
 - Store a `history_id` per trigger. Each poll reads `users.history.list(startHistoryId)` for added

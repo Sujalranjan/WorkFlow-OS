@@ -207,12 +207,15 @@ cd backend
 alembic revision --autogenerate -m "describe the change"
 ```
 
-## Adding a new executable action
+## Adding an integration or an action
 
-1. Add a `CatalogAction` to `ACTION_CATALOG` (executor name, risk, parameters, outputs).
-2. Teach `classify_event()` how the action looks when a person does it (URL pattern, download source, form submit).
-3. Make sure the executor declares the action in `supported_actions`. If needed, map its outputs to context keys in `ExecutionEngine`.
-4. Add a classification test and extend the recorded-session tests.
+Each external tool is one module in [backend/app/integrations](backend/app/integrations) (see `gmail.py`, `demo_crm.py`, `slack.py`). The action catalog, the event classifier, the executor and verifier registries, `/api/status` and the dashboard's connection list are all built from these modules.
+
+1. **Actions:** declare a `CatalogAction` for each thing the tool can do. Give it an id `<integration key>.<action>`, its executor's name, a risk level, parameters and outputs.
+2. **Recognising it:** write a classifier that recognises the action in observed activity (URL pattern, download source or form submit), returning `None` for anything else.
+3. **Doing and checking it:** add factories for the executor, which must declare each action in `supported_actions`, and for a read-only verifier. If later steps need the action's outputs, map them to context keys in `ExecutionEngine`.
+4. **Status:** add a status check, which returns whether the tool is connected plus a hint and never credentials. Then add the module to `INTEGRATIONS` in `app/integrations/__init__.py`.
+5. **Tests:** add classification and execution tests. `tests/backend/test_integrations_framework.py` then checks the new module automatically: namespaced action ids, exact executor routing, registry membership, and classifiers that don't overlap.
 
 More detail: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).
 
