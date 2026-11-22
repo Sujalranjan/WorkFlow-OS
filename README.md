@@ -1,8 +1,17 @@
 # WorkFlowOS
 
 [![CI](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/ci.yml)
+[![Security](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/security.yml/badge.svg)](https://github.com/Sujalranjan/WorkFlow-OS/actions/workflows/security.yml)
 
-WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, a CRM, Slack), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
+WorkFlowOS watches the routine work you do across apps, finds the parts you repeat, turns them into a workflow you approve, and then runs that workflow for you through real integrations (Gmail, HubSpot or a demo CRM, Slack, Google Sheets, a shared folder), with a dry run first. After that, an email trigger queues a run for each new matching email. You approve each run, and a run stops to ask you whenever it can't decide safely (for example, an unknown customer).
+
+**Highlights**
+
+- **Learns from observation, not prompts:** a desktop agent and browser extension record structured events; repeated routines are found deterministically and turned into workflows. An LLM only describes them, and its output is validated against what was observed.
+- **Safe by construction:** a fixed action catalog is the only path to execution, every workflow (and every edited version) needs human approval, runs fail closed, ambiguous lookups pause for a person, and work that may have changed an external system is never retried automatically.
+- **Real integrations, least privilege:** Gmail read-only by default (labeling and Sheets are opt-in permissions), HubSpot, Slack (channel picker, thread replies, Add to Slack), Google Sheets, a shared folder; every action is independently verified after the run.
+- **Workflow editor with versioning:** change steps and input sources, checked against the catalog; each save is a new version that must be approved again.
+- **Production-ready for one team:** Postgres with migrations, a job queue with leases and workers, HTTPS deployment with Caddy, readiness checks, Prometheus metrics, Slack alerts, backups, security headers, CodeQL and dependency audits. 440+ tests on SQLite and Postgres in CI.
 
 ```mermaid
 flowchart LR
@@ -10,7 +19,7 @@ flowchart LR
     D --> I[Interpret<br/>Gemini, checked against<br/>what was observed]
     I --> A{Approve<br/>workflow}
     A --> R[Run<br/>manually or on<br/>new email, approved]
-    R --> X[Gmail · CRM · Slack]
+    R --> X[Gmail · HubSpot / CRM · Slack<br/>Sheets · shared folder]
     X --> V[Verify<br/>independent re-reads]
     V --> L[Reliability]
 ```
