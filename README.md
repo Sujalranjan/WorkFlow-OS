@@ -157,7 +157,7 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 |---|---|---|
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
 | Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
-| Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification); checked with Slack before saving. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
+| Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification). Add `channels:read` (and `groups:read` for private channels) to pick the channel from a list; without them, type the channel ID. Settings warns when the bot is not in the chosen channel. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
 | HubSpot | **Settings > Integrations > HubSpot** | Service key with `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read`; then choose the contact property that "Update contact" writes. `HUBSPOT_ACCESS_TOKEN` works as a fallback |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
 

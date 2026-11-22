@@ -56,6 +56,7 @@ ROUTE_POLICY: Dict[Tuple[str, str], Access] = {
     ("PUT", "/api/integrations/hubspot/settings"): AD,
     ("DELETE", "/api/integrations/hubspot"): AD,
     ("PUT", "/api/integrations/slack"): AD,
+    ("POST", "/api/integrations/slack/channels"): AD,
     ("DELETE", "/api/integrations/slack"): AD,
     # sample data and resets change shared state
     ("POST", "/api/demo/seed-activity"): AD,

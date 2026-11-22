@@ -51,6 +51,13 @@ class FakeGoogle:
             "token_type": "Bearer",
         }
         self.slack_ok = True
+        # conversations.list / conversations.info
+        self.slack_scopes = {"channels:read", "groups:read"}
+        self.slack_channels = [
+            {"id": "C0123456789", "name": "ops", "is_private": False, "is_member": True},
+            {"id": "C0NOTJOINED", "name": "announcements", "is_private": False, "is_member": False},
+            {"id": "G0PRIVATE01", "name": "finance", "is_private": True, "is_member": True},
+        ]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(request)
@@ -66,7 +73,29 @@ class FakeGoogle:
             if self.slack_ok:
                 return httpx.Response(200, json={"ok": True, "team": "Acme", "user": "workflowos"})
             return httpx.Response(200, json={"ok": False, "error": "invalid_auth"})
+        if "/conversations." in url:
+            return self.slack_conversations(request)
         return httpx.Response(404)
+
+    def slack_conversations(self, request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"].startswith("Bearer xoxb-")
+        params = request.url.params
+        if request.url.path.endswith("/conversations.info"):
+            if "channels:read" not in self.slack_scopes:
+                return httpx.Response(200, json={"ok": False, "error": "missing_scope"})
+            match = [c for c in self.slack_channels if c["id"] == params["channel"]]
+            if not match or (match[0]["is_private"] and not match[0]["is_member"]):
+                return httpx.Response(200, json={"ok": False, "error": "channel_not_found"})
+            return httpx.Response(200, json={"ok": True, "channel": match[0]})
+        private = params["types"] == "private_channel"
+        if ("groups:read" if private else "channels:read") not in self.slack_scopes:
+            return httpx.Response(200, json={"ok": False, "error": "missing_scope"})
+        chosen = [c for c in self.slack_channels if c["is_private"] == private]
+        # one channel per page, to exercise the cursor
+        start = int(params.get("cursor") or 0)
+        page = chosen[start : start + 1]
+        cursor = str(start + 1) if start + 1 < len(chosen) else ""
+        return httpx.Response(200, json={"ok": True, "channels": page, "response_metadata": {"next_cursor": cursor}})
 
     def factory(self):
         return httpx.Client(transport=httpx.MockTransport(self.handler))
@@ -264,6 +293,8 @@ def test_slack_settings_are_validated_and_used_by_the_client(service, store, goo
         "configured": True,
         "source": "settings",
         "channel_id": "C0123456789",
+        "channel_name": "ops",
+        "bot_in_channel": True,
         "team": "Acme",
         "updated_at": ok.json()["slack"]["updated_at"],
         "updated_by": "test-admin@example.com",
@@ -277,6 +308,53 @@ def test_slack_settings_are_validated_and_used_by_the_client(service, store, goo
 
     assert client.delete("/api/integrations/slack").json()["slack"]["configured"] is False
     assert SlackApiClient()._bot_token is None
+
+
+def test_slack_channel_picker_lists_channels_and_warns_about_membership(service, store, google, monkeypatch):
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    # Before saving: list with the token being set up (sent in the body, never the URL)
+    assert client.post("/api/integrations/slack/channels", json={}).status_code == 400  # nothing saved yet
+    listed = client.post("/api/integrations/slack/channels", json={"bot_token": "xoxb-good-token-123"})
+    assert listed.status_code == 200 and "xoxb-good" not in str(google.calls[-1].url)
+    body = listed.json()
+    assert body["can_list"] is True and body["notes"] == []
+    # channels the bot is in first, then by name; private ones included with groups:read
+    assert [(c["name"], c["is_member"]) for c in body["channels"]] == [("finance", True), ("ops", True), ("announcements", False)]
+
+    # Saving a channel the bot was not invited to is allowed but flagged
+    saved = client.put("/api/integrations/slack", json={"bot_token": "xoxb-good-token-123", "channel_id": "C0NOTJOINED"})
+    assert saved.json()["slack"]["bot_in_channel"] is False and saved.json()["slack"]["channel_name"] == "announcements"
+
+    # Changing only the channel keeps the saved token
+    moved = client.put("/api/integrations/slack", json={"channel_id": "C0123456789"})
+    assert moved.status_code == 200 and moved.json()["slack"]["bot_in_channel"] is True
+    assert store.get(SLACK).secret["bot_token"] == "xoxb-good-token-123"
+    assert client.post("/api/integrations/slack/channels", json={}).json()["can_list"] is True  # uses the saved token
+
+    # An unknown channel is rejected
+    bad = client.put("/api/integrations/slack", json={"channel_id": "C0DOESNOTEXIST"})
+    assert bad.status_code == 400 and "cannot find that channel" in bad.json()["detail"]
+
+
+def test_slack_channel_picker_without_read_scopes(service, store, google, monkeypatch):
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    client = TestClient(create_app())
+
+    google.slack_scopes = {"channels:read"}  # no groups:read: public channels only, with a note
+    partial = client.post("/api/integrations/slack/channels", json={"bot_token": "xoxb-good-token-123"}).json()
+    assert [c["name"] for c in partial["channels"]] == ["ops", "announcements"]
+    assert "groups:read" in partial["notes"][0]
+
+    google.slack_scopes = set()  # chat:write only: no list, type the id; membership unknown
+    none = client.post("/api/integrations/slack/channels", json={"bot_token": "xoxb-good-token-123"}).json()
+    assert none["can_list"] is False and none["channels"] == [] and "channels:read" in none["notes"][0]
+    saved = client.put("/api/integrations/slack", json={"bot_token": "xoxb-good-token-123", "channel_id": "C0123456789"})
+    assert saved.status_code == 200 and saved.json()["slack"]["bot_in_channel"] is None
+
+    google.slack_ok = False
+    assert client.post("/api/integrations/slack/channels", json={"bot_token": "xoxp-user-token-1"}).status_code == 400
 
 
 # ------------------------------------------------------------------- access
@@ -303,6 +381,7 @@ def test_only_admins_manage_integrations(tmp_path, monkeypatch, store):
     approver = signed_in(Role.APPROVER)
     assert approver.get("/api/integrations").status_code == 403
     assert approver.put("/api/integrations/slack", json={"bot_token": "xoxb-1234567890", "channel_id": "C1"}, headers=csrf).status_code == 403
+    assert approver.post("/api/integrations/slack/channels", json={}, headers=csrf).status_code == 403
     assert signed_in(Role.ADMIN).get("/api/integrations").status_code == 200
     # The callback is reachable without a session, but only a valid state does anything
     anon = TestClient(app).get("/api/integrations/gmail/callback", params={"state": "forged", "code": "x"}, follow_redirects=False)

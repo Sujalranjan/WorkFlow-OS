@@ -211,19 +211,77 @@ class IntegrationService:
 
     # ------------------------------------------------------------------ slack
 
-    def save_slack(self, bot_token: str, channel_id: str, actor: str) -> Dict[str, Any]:
-        from app.services.slack_client import CHANNEL_REGEX, SlackApiClient
-
-        bot_token, channel_id = bot_token.strip(), channel_id.strip()
-        if not bot_token.startswith("xoxb-"):
+    def _slack_token(self, bot_token: Optional[str]) -> str:
+        """The token being set up, or (when none is given) the one already saved in Settings."""
+        token = (bot_token or "").strip()
+        if not token:
+            stored = self.store.get(SLACK)
+            token = (stored.secret.get("bot_token") or "") if stored else ""
+            if not token:
+                raise IntegrationError("Paste the Slack bot token first.")
+        if not token.startswith("xoxb-"):
             raise IntegrationError("Use a bot token (it starts with xoxb-).")
+        return token
+
+    def slack_channels(self, bot_token: Optional[str] = None) -> Dict[str, Any]:
+        """Channels for the Settings picker. Without the channels:read scope the list is empty and
+        `can_list` is False, and Settings asks for the channel id instead."""
+        from app.services.slack_client import SlackApiClient, SlackApiError, SlackClientError
+
+        client = SlackApiClient(bot_token=self._slack_token(bot_token), http_client=self._http_factory())
+        try:
+            channels, notes = client.list_channels()
+        except SlackApiError as e:
+            if e.error_code == "missing_scope":
+                return {
+                    "can_list": False,
+                    "channels": [],
+                    "notes": ["This token cannot list channels (add the channels:read scope). You can type the channel id instead."],
+                }
+            if e.error_code in ("invalid_auth", "not_authed", "account_inactive", "token_revoked"):
+                raise IntegrationError("Slack rejected this token.")
+            raise IntegrationError(f"Slack could not list channels ({e.error_code}).")
+        except SlackClientError as e:
+            raise IntegrationError(str(e))
+        return {"can_list": True, "channels": channels, "notes": notes}
+
+    def save_slack(self, bot_token: Optional[str], channel_id: str, actor: str) -> Dict[str, Any]:
+        """Save the bot token (or keep the saved one) and the default channel.
+
+        Also records whether the bot is a member of the channel (bots can only post to channels they
+        were invited to), so Settings can warn without calling Slack on every page load. When the
+        token cannot read channel info (no channels:read), membership is unknown (None).
+        """
+        from app.services.slack_client import CHANNEL_REGEX, SlackApiClient, SlackApiError, SlackClientError
+
+        token, channel_id = self._slack_token(bot_token), channel_id.strip()
         if not CHANNEL_REGEX.match(channel_id):
             raise IntegrationError("Enter a channel ID such as C0123456789.")
-        identity = SlackApiClient(bot_token=bot_token, default_channel_id=channel_id, http_client=self._http_factory()).identify()
+        client = SlackApiClient(bot_token=token, default_channel_id=channel_id, http_client=self._http_factory())
+        identity = client.identify()
         if not identity:
             raise IntegrationError("Slack rejected this token.")
-        metadata = {"channel_id": channel_id, "team": identity.get("team"), "bot": identity.get("user")}
-        self.store.put(SLACK, {"bot_token": bot_token}, metadata, actor)
+        channel_name, member = None, None
+        try:
+            info = client.channel_info(channel_id)
+            channel_name, member = info.get("name"), info.get("is_member")
+        except SlackApiError as e:
+            if e.error_code == "channel_not_found":
+                raise IntegrationError(
+                    "Slack cannot find that channel. Check the id; for a private channel, invite the bot first."
+                )
+            if e.error_code != "missing_scope":
+                logger.warning("Could not check Slack channel membership: %s", e.error_code)
+        except SlackClientError:
+            logger.warning("Could not check Slack channel membership (Slack unreachable)")
+        metadata = {
+            "channel_id": channel_id,
+            "channel_name": channel_name,
+            "bot_in_channel": member,
+            "team": identity.get("team"),
+            "bot": identity.get("user"),
+        }
+        self.store.put(SLACK, {"bot_token": token}, metadata, actor)
         return metadata
 
     def remove_slack(self) -> None:
@@ -326,6 +384,9 @@ class IntegrationService:
                 "configured": bool(slack) or env_slack,
                 "source": "settings" if slack else ("environment" if env_slack else None),
                 "channel_id": slack.metadata.get("channel_id") if slack else os.getenv("SLACK_CHANNEL_ID"),
+                "channel_name": slack.metadata.get("channel_name") if slack else None,
+                # True/False as checked when saved; None when unknown (token without channels:read)
+                "bot_in_channel": slack.metadata.get("bot_in_channel") if slack else None,
                 "team": slack.metadata.get("team") if slack else None,
                 "updated_at": slack.updated_at if slack else None,
                 "updated_by": slack.updated_by if slack else None,

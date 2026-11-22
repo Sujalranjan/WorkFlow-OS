@@ -37,8 +37,14 @@ class HubSpotSettingsRequest(BaseModel):
 
 
 class SlackSettingsRequest(BaseModel):
-    bot_token: str = Field(..., min_length=10, max_length=300)
+    # Omitted when only the channel changes: the saved token is kept.
+    bot_token: Optional[str] = Field(default=None, min_length=10, max_length=300)
     channel_id: str = Field(..., min_length=2, max_length=80)
+
+
+class SlackChannelsRequest(BaseModel):
+    # A token being set up (POST body, never a URL), or omitted to use the saved one.
+    bot_token: Optional[str] = Field(default=None, min_length=10, max_length=300)
 
 
 def _bad_request(e: IntegrationError) -> HTTPException:
@@ -107,6 +113,14 @@ def save_slack(req: SlackSettingsRequest, actor: str = Depends(current_actor)) -
     except IntegrationError as e:
         raise _bad_request(e)
     return service.describe()
+
+
+@router.post("/slack/channels")
+def list_slack_channels(req: SlackChannelsRequest) -> Dict[str, Any]:
+    try:
+        return get_integration_service().slack_channels(req.bot_token)
+    except IntegrationError as e:
+        raise _bad_request(e)
 
 
 @router.delete("/slack")

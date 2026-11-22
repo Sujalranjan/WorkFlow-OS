@@ -97,9 +97,17 @@ Each one is mergeable on its own, with tests on SQLite and Postgres.
   verifier, classifiers, Settings, and a recorded Gmail -> HubSpot -> Slack routine discovered and
   run end to end.
 
-### 3d: Slack channel picker
-- Channel picker from `conversations.list` (scope `channels:read`) in Settings, replacing the typed
-  channel id; warn when the bot is not a member of the channel.
+### 3d: Slack channel picker (done)
+- Settings: paste the bot token, **Check token** lists channels (`conversations.list`, bot's
+  channels first, archived ones left out) and you pick one. Public channels need `channels:read`;
+  private ones need `groups:read` and are skipped with a note without it. A token with neither
+  falls back to typing the channel id.
+- Saving checks the channel (`conversations.info`): an unknown id is rejected; membership is
+  recorded, and Settings warns while the bot is not in the channel (bots can only post where they
+  were invited). Without `channels:read` membership is shown as unknown.
+- **Change channel** reuses the saved token (it is never sent back to the browser). The channel
+  list is a POST so a token being set up never appears in a URL.
+- Fix found on the way: `SlackApiClient` closed an injected HTTP client after its first request.
 - "Add to Slack" OAuth moves to Phase 5 (needs HTTPS).
 
 ### 3e: More catalog actions (all four chosen)

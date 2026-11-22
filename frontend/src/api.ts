@@ -319,6 +319,9 @@ export interface Integrations {
     configured: boolean;
     source: 'settings' | 'environment' | null;
     channel_id: string | null;
+    channel_name: string | null;
+    /** Whether the bot was in the channel when it was saved; null when the token cannot tell. */
+    bot_in_channel: boolean | null;
     team: string | null;
     updated_at: string | null;
     updated_by: string | null;
@@ -351,8 +354,20 @@ export const removeGmailClient = () => request<Integrations>('/api/integrations/
 export const startGmailConnect = () =>
   post<{ authorization_url: string }>('/api/integrations/gmail/connect', { return_to: window.location.origin });
 export const disconnectGmail = () => request<Integrations>('/api/integrations/gmail', { method: 'DELETE' });
-export const saveSlack = (bot_token: string, channel_id: string) =>
-  request<Integrations>('/api/integrations/slack', { method: 'PUT', body: JSON.stringify({ bot_token, channel_id }) });
+export interface SlackChannels {
+  can_list: boolean;
+  channels: { id: string; name: string; is_private: boolean; is_member: boolean }[];
+  notes: string[];
+}
+/** Channels for the picker; pass the token being set up, or null to use the saved one. */
+export const listSlackChannels = (bot_token: string | null) =>
+  post<SlackChannels>('/api/integrations/slack/channels', bot_token ? { bot_token } : {});
+/** bot_token null keeps the saved token (changing only the channel). */
+export const saveSlack = (bot_token: string | null, channel_id: string) =>
+  request<Integrations>('/api/integrations/slack', {
+    method: 'PUT',
+    body: JSON.stringify(bot_token ? { bot_token, channel_id } : { channel_id }),
+  });
 export const removeSlack = () => request<Integrations>('/api/integrations/slack', { method: 'DELETE' });
 export const saveHubSpot = (access_token: string) =>
   request<Integrations>('/api/integrations/hubspot', { method: 'PUT', body: JSON.stringify({ access_token }) });

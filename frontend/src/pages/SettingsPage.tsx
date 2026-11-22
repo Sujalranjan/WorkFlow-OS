@@ -3,6 +3,7 @@ import {
   HubSpotProperty,
   Integrations,
   Role,
+  SlackChannels,
   User,
   createApiKey,
   createUser,
@@ -10,6 +11,7 @@ import {
   getHubSpotProperties,
   getIntegrations,
   listApiKeys,
+  listSlackChannels,
   listUsers,
   removeGmailClient,
   removeHubSpot,
@@ -457,11 +459,38 @@ const GmailCard: React.FC<CardProps> = ({ info, action, update }) => {
 
 const SlackCard: React.FC<CardProps> = ({ info, action, update }) => {
   const sl = info.slack;
+  // 'token': paste a (new) token; 'channel': pick a channel with the saved token; null: summary
+  const [mode, setMode] = useState<'token' | 'channel' | null>(null);
   const [token, setToken] = useState('');
+  const [found, setFound] = useState<SlackChannels | null>(null);
   const [channel, setChannel] = useState('');
-  const [editing, setEditing] = useState(false);
   const busy = action.busy !== null;
-  const showForm = !sl.configured || editing;
+  const editing = !sl.configured || mode !== null;
+  const usingSavedToken = sl.configured && mode === 'channel';
+  const channelLabel = sl.channel_name ? `#${sl.channel_name}` : sl.channel_id;
+
+  const reset = () => {
+    setMode(null);
+    setToken('');
+    setFound(null);
+    setChannel('');
+  };
+
+  const findChannels = (withToken: string | null) =>
+    action.run('slack-channels', () => listSlackChannels(withToken)).then((res) => {
+      if (!res) return;
+      setFound(res);
+      setChannel(sl.channel_id && res.channels.some((c) => c.id === sl.channel_id) ? sl.channel_id : '');
+    });
+
+  const save = () =>
+    update(
+      action.run('slack-save', () => saveSlack(usingSavedToken ? null : token, channel), (r) =>
+        r.slack.bot_in_channel === false ? 'Saved, but the bot is not in that channel yet (see below).' : 'Slack settings saved.'
+      )
+    ).then(reset);
+
+  const picked = found?.channels.find((c) => c.id === channel);
 
   return (
     <div className="subform">
@@ -471,44 +500,94 @@ const SlackCard: React.FC<CardProps> = ({ info, action, update }) => {
       </div>
       {sl.configured && (
         <p className="muted small">
-          Posting to <code>{sl.channel_id}</code>
+          Posting to <code>{channelLabel}</code>
+          {sl.channel_name ? ` (${sl.channel_id})` : ''}
           {sl.team ? ` in ${sl.team}` : ''}
           {sl.source === 'settings'
             ? ` · saved by ${sl.updated_by || 'unknown'} ${timeAgo(sl.updated_at)}`
             : ' · from SLACK_BOT_TOKEN / SLACK_CHANNEL_ID on the server'}
         </p>
       )}
-      {showForm ? (
+      {sl.configured && sl.bot_in_channel === false && !editing && (
+        <Alert>
+          The bot is not a member of <code>{channelLabel}</code>, so Slack steps will fail. In Slack, open the channel and
+          run <code>/invite @your-bot</code>, then save the channel again here to re-check.
+        </Alert>
+      )}
+
+      {editing ? (
         <form
           className="form"
           onSubmit={(e) => {
             e.preventDefault();
-            update(action.run('slack-save', () => saveSlack(token, channel), 'Slack token checked and saved.')).then(() => {
-              setToken('');
-              setEditing(false);
-            });
+            if (found) save();
+            else findChannels(usingSavedToken ? null : token);
           }}
         >
-          <p className="muted small">
-            Use a bot token (<code>xoxb-…</code>) with the <code>chat:write</code> and <code>channels:history</code> scopes, and
-            invite the bot to the channel.
-          </p>
-          <div className="form-row">
-            <label className="field">
-              Bot token
-              <input required type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
-            </label>
-            <label className="field">
-              Channel ID
-              <input required value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="C0123456789" />
-            </label>
-          </div>
+          {!usingSavedToken && (
+            <>
+              <p className="muted small">
+                Use a bot token (<code>xoxb-…</code>) with <code>chat:write</code> and <code>channels:history</code>. Add{' '}
+                <code>channels:read</code> (and <code>groups:read</code> for private channels) to choose the channel from a
+                list. Invite the bot to the channel.
+              </p>
+              <label className="field">
+                Bot token
+                <input
+                  required
+                  type="password"
+                  autoComplete="off"
+                  value={token}
+                  onChange={(e) => {
+                    setToken(e.target.value);
+                    setFound(null);
+                  }}
+                />
+              </label>
+            </>
+          )}
+
+          {found && (
+            <>
+              {found.notes.map((n) => (
+                <p key={n} className="muted small">
+                  {n}
+                </p>
+              ))}
+              {found.can_list && found.channels.length > 0 ? (
+                <label className="field">
+                  Channel
+                  <select required value={channel} onChange={(e) => setChannel(e.target.value)}>
+                    <option value="">Choose…</option>
+                    {found.channels.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.is_private ? '🔒 ' : '#'}
+                        {c.name}
+                        {c.is_member ? '' : ' (bot not invited)'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="field">
+                  Channel ID
+                  <input required value={channel} onChange={(e) => setChannel(e.target.value.trim())} placeholder="C0123456789" />
+                </label>
+              )}
+              {picked && !picked.is_member && (
+                <p className="muted small">
+                  The bot is not in #{picked.name} yet. Invite it in Slack (<code>/invite @your-bot</code>) before the first run.
+                </p>
+              )}
+            </>
+          )}
+
           <div className="actions">
-            <button type="submit" disabled={busy}>
-              Check and save
+            <button type="submit" disabled={busy || (!!found && !channel)}>
+              {found ? 'Save' : usingSavedToken ? 'Load channels' : 'Check token'}
             </button>
-            {editing && (
-              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+            {sl.configured && (
+              <button type="button" className="btn-secondary" onClick={reset}>
                 Cancel
               </button>
             )}
@@ -516,15 +595,19 @@ const SlackCard: React.FC<CardProps> = ({ info, action, update }) => {
         </form>
       ) : (
         <div className="actions">
-          <button
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() => {
-              setChannel(sl.channel_id || '');
-              setEditing(true);
-            }}
-          >
-            Change
+          {sl.source === 'settings' && (
+            <button
+              disabled={busy}
+              onClick={() => {
+                setMode('channel');
+                findChannels(null);
+              }}
+            >
+              Change channel
+            </button>
+          )}
+          <button className="btn-secondary" disabled={busy} onClick={() => setMode('token')}>
+            Change token
           </button>
           {sl.source === 'settings' && (
             <button

@@ -11,6 +11,7 @@ SECURITY & GOVERNANCE:
 - Channel IDs must come from validated parameters or explicit environment configuration.
 """
 
+import contextlib
 from datetime import datetime, timezone
 import logging
 import os
@@ -106,10 +107,11 @@ class SlackApiClient:
     def default_channel_id(self, value: Optional[str]) -> None:
         self._explicit_channel = value
 
-    def _get_client(self) -> httpx.Client:
-        """Returns the configured HTTP client."""
+    def _get_client(self):
+        """A context manager yielding the HTTP client. An injected client is shared across calls and
+        left open (its owner closes it); otherwise a fresh client is created and closed per call."""
         if self._custom_client is not None:
-            return self._custom_client
+            return contextlib.nullcontext(self._custom_client)
         return httpx.Client(timeout=self.timeout)
 
     def _get_auth_headers(self) -> Dict[str, str]:
@@ -148,6 +150,64 @@ class SlackApiClient:
         except Exception:
             return None
         return data if data.get("ok") is True else None
+
+    def channel_info(self, channel_id: str) -> Dict[str, Any]:
+        """conversations.info for one channel: {id, name, is_private, is_member}. Needs channels:read
+        (groups:read for private channels); raises SlackApiError with Slack's error code otherwise."""
+        headers = self._get_auth_headers()
+        try:
+            with self._get_client() as client:
+                data = client.get(f"{self.base_url}/conversations.info", headers=headers, params={"channel": channel_id}).json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise SlackConnectionError(f"Slack unreachable: {type(e).__name__}") from e
+        if not data.get("ok"):
+            raise SlackApiError(str(data.get("error") or "unknown_error"))
+        c = data.get("channel") or {}
+        return {"id": c.get("id"), "name": c.get("name"), "is_private": bool(c.get("is_private")), "is_member": bool(c.get("is_member"))}
+
+    def list_channels(self, max_channels: int = 2000) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Channels the bot can see, for the Settings picker: ([{id, name, is_private, is_member}], notes).
+
+        Public channels need `channels:read`; without it this raises SlackApiError('missing_scope')
+        and Settings falls back to typing the channel id. Private channels need `groups:read` and are
+        skipped (with a note) when that scope is missing. Archived channels are left out.
+        """
+        headers = self._get_auth_headers()
+        channels: List[Dict[str, Any]] = []
+        notes: List[str] = []
+        with self._get_client() as client:
+            for kind in ("public_channel", "private_channel"):
+                cursor = ""
+                while len(channels) < max_channels:
+                    params = {"types": kind, "exclude_archived": "true", "limit": "200"}
+                    if cursor:
+                        params["cursor"] = cursor
+                    try:
+                        data = client.get(f"{self.base_url}/conversations.list", headers=headers, params=params).json()
+                    except (httpx.HTTPError, ValueError) as e:
+                        raise SlackConnectionError(f"Slack unreachable: {type(e).__name__}") from e
+                    if not data.get("ok"):
+                        error = str(data.get("error") or "unknown_error")
+                        if kind == "private_channel" and error == "missing_scope":
+                            notes.append("Private channels are not listed: add the groups:read scope to see them.")
+                            break
+                        raise SlackApiError(error)
+                    for c in data.get("channels") or []:
+                        channels.append(
+                            {
+                                "id": c.get("id"),
+                                "name": c.get("name"),
+                                "is_private": bool(c.get("is_private")),
+                                "is_member": bool(c.get("is_member")),
+                            }
+                        )
+                    cursor = ((data.get("response_metadata") or {}).get("next_cursor") or "").strip()
+                    if not cursor:
+                        break
+        if len(channels) >= max_channels:
+            notes.append(f"Only the first {max_channels} channels are listed; type the channel id for others.")
+        channels.sort(key=lambda c: (not c["is_member"], str(c["name"] or "").lower()))
+        return channels[:max_channels], notes
 
     def is_healthy(self) -> bool:
         """Checks Slack API connectivity via auth.test."""
