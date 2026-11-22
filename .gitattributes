@@ -1,0 +1,4 @@
+# Shell scripts and the Caddyfile run on Linux: keep LF line endings on every checkout.
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+frontend/nginx.conf.template text eol=lf

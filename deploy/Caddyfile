@@ -1,0 +1,42 @@
+# Production front door: HTTPS (automatic Let's Encrypt certificates) for the dashboard and the API
+# on one domain. Used by docker-compose.prod.yml; DOMAIN and ACME_EMAIL come from .env.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Same limit as the API's MAX_REQUEST_BYTES; refuse oversized bodies at the edge.
+	request_body {
+		max_size 2MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Metrics are for the monitoring network only, never the internet.
+	handle /metrics* {
+		respond 404
+	}
+
+	@api path /api/* /health /health/ready
+	handle @api {
+		reverse_proxy api:8000 {
+			header_up X-Request-ID {http.request.uuid}
+		}
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

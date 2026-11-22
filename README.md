@@ -85,6 +85,10 @@ This starts Postgres, the API (http://localhost:8000/docs), the Demo CRM (http:/
   Restore a dump with `docker compose exec -T postgres pg_restore -U workflowos -d workflowos --clean < workflowos-YYYY-MM-DD.dump`.
 - Logs are JSON, one object per line, with a `request_id` that is also returned in the `X-Request-ID` response header: `docker compose logs -f api`.
 
+## Deploy to production
+
+`docker-compose.prod.yml` adds Caddy in front: automatic HTTPS (Let's Encrypt) on your domain, the dashboard and API on one origin, Secure cookies, no other ports published, API docs and `/metrics` not exposed. Readiness (`/health/ready`), Prometheus metrics, a **System** page and Slack alerts cover monitoring; `scripts/backup.sh` / `scripts/restore.sh` handle backups. Step by step: [docs/deployment.md](docs/deployment.md). Security overview: [SECURITY.md](SECURITY.md).
+
 ## Run locally
 
 

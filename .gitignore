@@ -42,6 +42,7 @@ dist-ssr/
 # Environment variables
 .env
 .env.local
+.env.production
 .env.*.local
 
 # IDE
@@ -80,3 +81,7 @@ secrets/
 
 # Encryption key for stored integration credentials (created next to the database)
 *.secret.key
+
+# Backups made by scripts/backup.sh (database dumps and the encryption key)
+backups/
+*.dump

@@ -1,0 +1,62 @@
+# Production: HTTPS on your own domain, nothing else exposed.
+#
+#   cp .env.production.example .env      # then fill in DOMAIN, ACME_EMAIL, passwords and keys
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Caddy terminates HTTPS (Let's Encrypt) and serves the dashboard and the API on one origin
+# (https://DOMAIN and https://DOMAIN/api), so cookies are Secure and SameSite and no other port is
+# published. See docs/deployment.md.
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN (e.g. workflowos.example.com) in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL (for Let's Encrypt notices) in .env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+  crm:
+    # Internal only (the bundled Demo CRM); the API reaches it on the Docker network.
+    ports: !reset []
+
+  api:
+    ports: !reset []
+    environment:
+      FRONTEND_ORIGINS: https://${DOMAIN}
+      PUBLIC_API_URL: https://${DOMAIN}
+      COOKIE_SECURE: "true"
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+      MIGRATE_ON_START: "true"
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+  worker:
+    environment:
+      FRONTEND_ORIGINS: https://${DOMAIN}
+      PUBLIC_API_URL: https://${DOMAIN}
+      COOKIE_SECURE: "true"
+
+  web:
+    ports: !reset []
+    build:
+      args:
+        # The dashboard calls the API on its own origin.
+        VITE_BACKEND_URL: https://${DOMAIN}
+
+volumes:
+  caddy-data:
+  caddy-config:
