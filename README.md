@@ -27,6 +27,9 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 | `gmail.download_attachment` | completed download from Gmail | GmailApiExecutor → sandbox | medium |
 | `crm.find_customer` | CRM page `/ui/customers/<id>` or `?q=` | CrmApiExecutor | low |
 | `crm.update_customer_record` | CRM form submit (status field) | CrmApiExecutor | high, confirmation required |
+| `hubspot.find_contact` | HubSpot contact record page or contacts-list search | HubSpotApiExecutor | low |
+| `hubspot.update_contact` | property saved on a HubSpot contact record | HubSpotApiExecutor | high, confirmation required |
+| `hubspot.add_note` | note saved on a HubSpot contact record | HubSpotApiExecutor | medium |
 | `slack.send_notification` | message sent in `app.slack.com/client/<team>/<channel>` | SlackApiExecutor | medium |
 
 - Events are classified deterministically (URL and metadata rules, with no LLM involved). A classified event becomes a DNA step such as `gmail:search_email` with `catalog_action` set. Its parameters (search query, customer, status, channel) become DNA variables.
@@ -40,7 +43,7 @@ The **Action Catalog** ([backend/app/services/action_catalog.py](backend/app/ser
 ```
 backend/            FastAPI backend: pipeline services, executors, verifiers, Demo CRM (+ browser UI)
 desktop-agent/      Windows window/file collectors, event queue, demo scripts
-  browser_extension/  Chrome/Edge extension that reports Gmail/CRM/Slack actions
+  browser_extension/  Chrome/Edge extension that reports Gmail/CRM/HubSpot/Slack actions
 frontend/           React + TypeScript dashboard (pages/, components/, api.ts)
 tests/              pytest suite (isolated: never touches your databases or live services)
 docs/               Architecture and development notes
@@ -134,6 +137,7 @@ Once a workflow that starts with a Gmail search is approved, open **Automations*
 - While the backend runs, it checks Gmail on the trigger's interval (default 60 s, minimum 30 s; read-only). Every new matching email appears in the **Inbox** as a run waiting for approval. Nothing runs until you approve it.
 - **Approve & run** executes the workflow for that exact email: the attachment download uses that email's message id, never "the newest match". The run is then verified and fed into the reliability profile.
 - If the CRM has no customer for the sender, or several possible ones, the run **pauses** and asks you to pick the customer. It then continues from that step. **Cancel run** stops it instead.
+- Each check is incremental. Gmail's change log says whether anything arrived since the last check; only then does WorkFlowOS list the matching emails, across every page of results. Up to 50 new emails are queued per check, oldest first, and the rest follow on the next checks, so a burst of emails is never skipped.
 - **Check now** polls immediately. A trigger only considers emails received after it was created, unless you choose a look-back window.
 - API: `/api/automation/triggers` and `/api/automation/runs` (see `/docs`). Polling is scheduled by the worker. Set `TRIGGER_POLLER_ENABLED=false` to turn it off.
 
@@ -154,7 +158,10 @@ Slow or external work runs in a background **worker**, not inside web requests: 
 | Gemini (optional) | `GEMINI_API_KEY`, `GEMINI_MODEL` in `.env` | Without a key an offline deterministic interpreter is used |
 | Gmail (read-only) | **Settings > Integrations > Connect Gmail** | See below. Older alternative: `credentials.json` + `python scripts/gmail_login.py` |
 | Slack | **Settings > Integrations > Slack** | Bot token (`xoxb-`) with `chat:write` (+ `channels:history` for verification); checked with Slack before saving. `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID` still work as a fallback |
+| HubSpot | **Settings > Integrations > HubSpot** | Service key with `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read`; then choose the contact property that "Update contact" writes. `HUBSPOT_ACCESS_TOKEN` works as a fallback |
 | CRM | `CRM_API_BASE_URL`, `CRM_WEB_BASE_URL` | Defaults to the bundled Demo CRM on port 8001 |
+
+**Connecting HubSpot:** in HubSpot, create a service key with the three contact scopes above (legacy private apps can no longer be created; an existing private-app token also works) and paste it in Settings. Saving checks the key. Then click **Choose property** to pick the contact property that "Update contact" steps write, and optionally a default value. Adding notes may need the notes scope on some accounts: if HubSpot refuses, the step is reported as blocked with `MISSING_SCOPE` and nothing else changes. Observing HubSpot in the browser is best effort, since HubSpot does not document its page structure; execution uses only the documented API.
 
 **Connecting Gmail** (once per installation):
 

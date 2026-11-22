@@ -77,7 +77,13 @@ class Harness:
             b"%PDF-1.4 trigger test",
             {"filename": "invoice.pdf", "mime_type": "application/pdf"},
         )
-        self.gmail.get_message_summary.side_effect = lambda mid: _message(mid)
+        # A fake mailbox: ids newest first; the change log reports new mail whenever the mailbox changed.
+        self.mail = {}
+        self.history = 100
+        self.gmail.get_message_summary.side_effect = lambda mid: self.mail.get(mid) or _message(mid)
+        self.gmail.list_message_ids.side_effect = lambda query, limit=5000: list(self.mail)[:limit]
+        self.gmail.current_history_id.side_effect = lambda: str(self.history)
+        self.gmail.messages_added_since.side_effect = lambda start: (int(start) < self.history, str(self.history))
 
         self.crm = MagicMock(spec=CrmApiClient)
         self.crm.find_customer.return_value = _customer()
@@ -115,13 +121,17 @@ class Harness:
     def trigger(self):
         return self.service.create_trigger(CreateTriggerRequest(workflow_id=self.spec.workflow_id, gmail_query=QUERY))
 
+    def mailbox(self, *messages):
+        """Set the messages matching the trigger query (newest first); counts as new mail arriving."""
+        self.mail = {m.message_id: m for m in messages}
+        self.history += 1
+
     def queue(self, *messages):
-        self.gmail.search_messages.return_value = GmailSearchResult(
-            query=QUERY, total_found=len(messages), messages=list(messages)
-        )
+        self.mailbox(*messages)
         trigger = self.trigger()
         result = self.service.poll(trigger.trigger_id)
-        self.gmail.search_messages.reset_mock()
+        self.gmail.list_message_ids.reset_mock()
+        self.gmail.get_message_summary.reset_mock()
         return trigger, result
 
 
@@ -156,16 +166,83 @@ def test_poll_queues_pending_runs_without_executing(h):
 
 
 def test_poll_scopes_query_to_trigger_start_and_never_requeues(h):
-    trigger, _ = h.queue(_message("msg-1"))
-    h.gmail.search_messages.return_value = GmailSearchResult(
-        query=QUERY, total_found=2, messages=[_message("msg-new"), _message("msg-1")]
-    )
+    trigger, first = h.queue(_message("msg-1"))
+    assert h.service.repo.get_trigger(trigger.trigger_id).history_id == str(h.history)
+    h.mailbox(_message("msg-new"), _message("msg-1"))
     second = h.service.poll(trigger.trigger_id)
 
-    sent_query = h.gmail.search_messages.call_args.kwargs["query"]
-    assert sent_query == f"({QUERY}) after:{trigger.active_since}"
+    sent_query = h.gmail.list_message_ids.call_args.kwargs["query"]
+    assert sent_query == f"({QUERY}) after:{trigger.active_since}"  # never earlier than the trigger's start
     assert [r.source_email.message_id for r in second.new_runs] == ["msg-new"]
     assert len(h.service.repo.list_runs(trigger_id=trigger.trigger_id)) == 2
+
+
+def test_poll_without_new_mail_does_not_search(h):
+    trigger, _ = h.queue(_message("msg-1"))
+    quiet = h.service.poll(trigger.trigger_id)  # the change log reports nothing new
+    assert quiet.unchanged is True and quiet.new_runs == []
+    h.gmail.list_message_ids.assert_not_called()
+    h.gmail.get_message_summary.assert_not_called()
+
+
+def test_large_backlog_is_never_skipped(h):
+    """Regression: polling used to read only the newest 25 matches, silently skipping older ones."""
+    from app.services.trigger_service import MAX_NEW_RUNS_PER_POLL
+
+    trigger, _ = h.queue()
+    h.mailbox(*[_message(f"msg-{n:03d}") for n in range(119, -1, -1)])  # 120 new emails, newest first
+
+    queued = []
+    first = h.service.poll(trigger.trigger_id)
+    queued += [r.source_email.message_id for r in first.new_runs]
+    assert len(first.new_runs) == MAX_NEW_RUNS_PER_POLL and first.backlog == 120 - MAX_NEW_RUNS_PER_POLL
+    assert "more matching email" in h.service.repo.get_trigger(trigger.trigger_id).last_note
+    while True:
+        result = h.service.poll(trigger.trigger_id)
+        queued += [r.source_email.message_id for r in result.new_runs]
+        if not result.backlog:
+            break
+
+    assert queued == [f"msg-{n:03d}" for n in range(120)]  # every email, once, oldest first
+    assert h.service.poll(trigger.trigger_id).unchanged is True
+
+
+def test_later_polls_search_only_since_the_last_sync(h, monkeypatch):
+    import app.services.trigger_service as ts
+
+    trigger, _ = h.queue(_message("msg-1"))
+    synced = h.service.repo.get_trigger(trigger.trigger_id).synced_until
+    assert synced is not None
+    h.mailbox(_message("msg-2"), _message("msg-1"))
+    h.service.poll(trigger.trigger_id)
+    query = h.gmail.list_message_ids.call_args.kwargs["query"]
+    expected_since = max(trigger.active_since, synced - ts.SYNC_OVERLAP_SECONDS)
+    assert query == f"({QUERY}) after:{expected_since}"
+
+
+def test_expired_gmail_history_falls_back_to_a_full_search(h):
+    from app.services.gmail_client import GmailHistoryExpired
+
+    trigger, _ = h.queue(_message("msg-1"))
+    h.mailbox(_message("msg-2"), _message("msg-1"))
+    h.gmail.messages_added_since.side_effect = GmailHistoryExpired("too old")
+    result = h.service.poll(trigger.trigger_id)
+    assert [r.source_email.message_id for r in result.new_runs] == ["msg-2"]
+    assert "history had expired" in h.service.repo.get_trigger(trigger.trigger_id).last_note
+
+
+def test_gmail_failure_mid_poll_keeps_the_sync_position(h):
+    trigger, _ = h.queue(_message("msg-1"))
+    before = h.service.repo.get_trigger(trigger.trigger_id)
+    h.mailbox(_message("msg-2"), _message("msg-1"))
+    h.gmail.get_message_summary.side_effect = RuntimeError("Gmail 503")
+    failed = h.service.poll(trigger.trigger_id)
+    after = h.service.repo.get_trigger(trigger.trigger_id)
+    assert "Gmail search failed" in failed.error
+    assert (after.history_id, after.synced_until) == (before.history_id, before.synced_until)
+
+    h.gmail.get_message_summary.side_effect = lambda mid: h.mail.get(mid)
+    assert [r.source_email.message_id for r in h.service.poll(trigger.trigger_id).new_runs] == ["msg-2"]
 
 
 def test_poll_records_error_when_gmail_not_authorized(h):
@@ -174,11 +251,10 @@ def test_poll_records_error_when_gmail_not_authorized(h):
     result = h.service.poll(trigger.trigger_id)
     assert result.new_runs == [] and "not connected" in result.error
     assert h.service.repo.get_trigger(trigger.trigger_id).last_error == result.error
-    h.gmail.search_messages.assert_not_called()
+    h.gmail.list_message_ids.assert_not_called()
 
 
 def test_poll_due_respects_interval_and_enabled_flag(h):
-    h.gmail.search_messages.return_value = GmailSearchResult(query=QUERY, total_found=0, messages=[])
     trigger = h.trigger()
     assert len(h.service.poll_due()) == 1  # never polled yet
     assert h.service.poll_due() == []  # interval not elapsed
@@ -340,7 +416,7 @@ def test_automation_api_validation_and_listing(h, monkeypatch):
     )
     assert res.status_code == 422  # below the 30s minimum
 
-    h.gmail.search_messages.return_value = GmailSearchResult(query=QUERY, total_found=1, messages=[_message()])
+    h.mailbox(_message())
     trig = client.post("/api/automation/triggers", json={"workflow_id": h.spec.workflow_id, "gmail_query": QUERY})
     assert trig.status_code == 201
     polled = client.post(f"/api/automation/triggers/{trig.json()['trigger_id']}/poll").json()

@@ -422,6 +422,23 @@ class ExecutionEngine:
                         if cust.get("email"):
                             context.resolved_parameters["customer_email"] = cust.get("email")
 
+                elif act_norm == "find_contact":
+                    contact = step_result.output.get("contact")
+                    if contact and isinstance(contact, dict):
+                        context.resolved_parameters["contact_id"] = contact.get("contact_id")
+                        context.resolved_parameters["contact_name"] = contact.get("name")
+                        context.resolved_parameters["customer_name"] = contact.get("name")
+                        if contact.get("email"):
+                            context.resolved_parameters["contact_email"] = contact.get("email")
+                            context.resolved_parameters["customer_email"] = contact.get("email")
+
+                elif act_norm == "update_contact":
+                    context.resolved_parameters["hubspot_updated"] = True
+
+                elif act_norm == "add_note":
+                    if step_result.output.get("note_id"):
+                        context.resolved_parameters["note_id"] = step_result.output.get("note_id")
+
                 elif act_norm in ("update_customer_record", "update_customer"):
                     cust = step_result.output.get("customer")
                     if cust and isinstance(cust, dict):

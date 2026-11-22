@@ -35,6 +35,10 @@ class EmailTrigger(BaseModel):
     created_at: str = Field(default_factory=_now)
     last_polled_at: Optional[str] = Field(default=None)
     last_error: Optional[str] = Field(default=None)
+    # Incremental sync position (set by polling; see TriggerService.poll)
+    history_id: Optional[str] = Field(default=None, description="Gmail history id the last complete sync ended at")
+    synced_until: Optional[int] = Field(default=None, description="Unix seconds every match before which is processed")
+    last_note: Optional[str] = Field(default=None, description="Informational message from the last poll")
 
 
 class RunStatus(str, Enum):
@@ -109,6 +113,11 @@ class PollResult(BaseModel):
     polled_at: str
     matched: int = 0
     new_runs: List[WorkflowRun] = Field(default_factory=list)
+    # New matching emails still to be queued by the next poll(s), when more arrived than one poll takes
+    backlog: int = 0
+    # True when Gmail reported no new messages, so no search was needed
+    unchanged: bool = False
+    note: Optional[str] = None
     error: Optional[str] = None
 
 

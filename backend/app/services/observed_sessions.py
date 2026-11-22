@@ -76,3 +76,58 @@ def build_observed_events(start: datetime = datetime(2026, 9, 28, 9, 0, tzinfo=t
     for i, s in enumerate(SESSIONS):
         events.extend(build_session_events(start + timedelta(hours=i), s["customer_id"], s["email"], s["invoice"], s["msg"]))
     return events
+
+
+# --------------------------------------------------------- the same routine, done in HubSpot
+
+HUBSPOT_PORTAL = "4812345"
+HUBSPOT_CONTACT_IDS = ["90001", "90002", "90003"]  # one per entry in SESSIONS
+
+
+def build_hubspot_session_events(start: datetime, contact_id: str, email: str, invoice: str, msg: str) -> List[ActivityEvent]:
+    """Gmail search + attachment -> HubSpot contact: set a property, add a note -> Slack."""
+    t = start
+    step = timedelta(seconds=7)
+    base = f"https://app.hubspot.com/contacts/{HUBSPOT_PORTAL}"
+    record = f"{base}/record/0-1/{contact_id}"
+    return [
+        _event(t, ActivityEventType.WINDOW_FOCUSED, "Gmail", window_title="Inbox - Gmail - Google Chrome"),
+        _event(t + step, ActivityEventType.BROWSER_NAVIGATION, "Google Chrome", url=GMAIL_SEARCH_URL),
+        _event(t + 2 * step, ActivityEventType.BROWSER_NAVIGATION, "Google Chrome", url=f"{GMAIL_SEARCH_URL}/{msg}"),
+        _event(
+            t + 3 * step,
+            ActivityEventType.FILE_DOWNLOADED,
+            "Google Chrome",
+            url="https://mail.google.com/mail/u/0?ui=2&ik=4f1c2&attid=0.1&disp=safe",
+            file_name=invoice,
+        ),
+        _event(
+            t + 4 * step,
+            ActivityEventType.BROWSER_NAVIGATION,
+            "Google Chrome",
+            url=f"{base}/objects/0-1/views/all/list?query={email.replace('@', '%40')}",
+        ),
+        _event(t + 5 * step, ActivityEventType.BROWSER_NAVIGATION, "Google Chrome", url=record),
+        _event(
+            t + 6 * step,
+            ActivityEventType.FORM_SUBMITTED,
+            "Google Chrome",
+            url=record,
+            form_fields={"kind": "property", "property": "replacement_status", "value": "processed"},
+        ),
+        _event(t + 7 * step, ActivityEventType.FORM_SUBMITTED, "Google Chrome", url=record, form_fields={"kind": "note"}),
+        _event(t + 8 * step, ActivityEventType.WINDOW_FOCUSED, "Slack", window_title="ops-replacements (Channel) - Slack"),
+        _event(
+            t + 9 * step,
+            ActivityEventType.FORM_SUBMITTED,
+            "Google Chrome",
+            url=f"https://app.slack.com/client/T0WORKFLOW/{SLACK_CHANNEL}",
+        ),
+    ]
+
+
+def build_observed_hubspot_events(start: datetime = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)) -> List[ActivityEvent]:
+    events: List[ActivityEvent] = []
+    for i, (s, contact_id) in enumerate(zip(SESSIONS, HUBSPOT_CONTACT_IDS)):
+        events.extend(build_hubspot_session_events(start + timedelta(hours=i), contact_id, s["email"], s["invoice"], s["msg"]))
+    return events

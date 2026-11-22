@@ -81,6 +81,11 @@ class GmailAuthenticationError(GmailClientError):
     pass
 
 
+class GmailHistoryExpired(GmailClientError):
+    """The stored history id is too old for Gmail (kept roughly a week); a full resync is needed."""
+    pass
+
+
 class GmailApiError(GmailClientError):
     """Raised when a Gmail API network or execution call fails."""
     pass
@@ -336,6 +341,80 @@ class GmailApiClient:
         except Exception as e:
             logger.error("Gmail search API call failed: %s", str(e))
             raise GmailApiError(f"Gmail search API error: {str(e)}") from e
+
+    # ------------------------------------------------------------ incremental sync (read-only)
+
+    def current_history_id(self) -> str:
+        """The mailbox's latest history id: a bookmark for messages_added_since()."""
+        service = self.get_service()
+        try:
+            return str(service.users().getProfile(userId="me").execute()["historyId"])
+        except (GmailConfigurationError, GmailAuthenticationError):
+            raise
+        except Exception as e:
+            raise GmailApiError(f"Gmail profile API error: {e}") from e
+
+    def messages_added_since(self, start_history_id: str) -> Tuple[bool, str]:
+        """Whether any message was added after `start_history_id`, and the newest history id.
+
+        Reads only the change log (ids), never message content. Raises GmailHistoryExpired when Gmail
+        no longer has history that old.
+        """
+        service = self.get_service()
+        added = False
+        latest = str(start_history_id)
+        page_token: Optional[str] = None
+        try:
+            while True:
+                res = (
+                    service.users()
+                    .history()
+                    .list(
+                        userId="me",
+                        startHistoryId=str(start_history_id),
+                        historyTypes=["messageAdded"],
+                        maxResults=500,
+                        pageToken=page_token,
+                    )
+                    .execute()
+                )
+                latest = str(res.get("historyId", latest))
+                if any(h.get("messagesAdded") for h in res.get("history", [])):
+                    added = True
+                page_token = res.get("nextPageToken")
+                if added or not page_token:
+                    return added, latest
+        except (GmailConfigurationError, GmailAuthenticationError):
+            raise
+        except Exception as e:
+            if getattr(getattr(e, "resp", None), "status", None) == 404:
+                raise GmailHistoryExpired(f"History id {start_history_id} is no longer available.") from e
+            raise GmailApiError(f"Gmail history API error: {e}") from e
+
+    def list_message_ids(self, query: str, limit: int = 5000) -> List[str]:
+        """Ids of every message matching `query` (newest first), across all result pages, up to `limit`."""
+        if not query or not query.strip():
+            raise ValueError("Query string cannot be empty.")
+        service = self.get_service()
+        ids: List[str] = []
+        page_token: Optional[str] = None
+        try:
+            while len(ids) < limit:
+                res = (
+                    service.users()
+                    .messages()
+                    .list(userId="me", q=query.strip(), maxResults=min(500, limit - len(ids)), pageToken=page_token)
+                    .execute()
+                )
+                ids.extend(m["id"] for m in res.get("messages", []))
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
+            return ids
+        except (GmailConfigurationError, GmailAuthenticationError):
+            raise
+        except Exception as e:
+            raise GmailApiError(f"Gmail search API error: {e}") from e
 
     @staticmethod
     def _summarize(service: Any, msg_id: str, thread_id: str = "") -> GmailMessageSummary:

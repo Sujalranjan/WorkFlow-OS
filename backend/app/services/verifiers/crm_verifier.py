@@ -47,11 +47,9 @@ class CrmVerificationStrategy(BaseVerificationStrategy):
         return VerificationStrategyType.STATE_MATCH
 
     def supports(self, step: PlannedStep, step_result: ExecutionStepResult) -> bool:
-        """Returns True if the step was executed by CrmApiExecutor or targets CRM."""
+        """Steps the Demo CRM executor ran, or that target the Demo CRM (HubSpot has its own verifier)."""
         app_norm = step.application.lower().strip()
-        is_crm_target = any(c in app_norm for c in ["crm", "hubspot", "salesforce"])
-        is_executor = step_result.executor_name == "CrmApiExecutor"
-        return is_executor or is_crm_target
+        return step_result.executor_name == "CrmApiExecutor" or app_norm in ("crm", "demo crm")
 
     def build_checks(
         self,

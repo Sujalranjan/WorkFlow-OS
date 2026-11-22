@@ -85,7 +85,7 @@ class CrmApiExecutor(BaseExecutor):
             executor_name=self.name,
             strategy_type=ExecutionStrategyType.API_INTEGRATION,
             supported_actions=["find_customer", "update_customer_record", "get_customer"],
-            supported_targets=["CRM", "crm", "Demo CRM", "HubSpot", "Salesforce"],
+            supported_targets=["CRM", "crm", "Demo CRM"],
             supported_risk_levels=[RiskLevel.LOW.value, RiskLevel.MEDIUM.value, RiskLevel.HIGH.value],
             implemented=True,
             requires_external_access=True,

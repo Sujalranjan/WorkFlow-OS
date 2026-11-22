@@ -79,6 +79,7 @@ export const AutomationsPage: React.FC = () => {
                       {runs.length === 1 ? '' : 's'} so far
                     </div>
                     {t.last_error && <div className="error-text small">{t.last_error}</div>}
+                    {!t.last_error && t.last_note && <div className="muted small">{t.last_note}</div>}
                   </div>
                   {canManage && <div className="actions">
                     <button
@@ -91,9 +92,9 @@ export const AutomationsPage: React.FC = () => {
                             if (r.error) throw new Error(r.error);
                             return r;
                           }, (r) =>
-                            r.new_runs.length
+                            (r.new_runs.length
                               ? `${r.new_runs.length} new email${r.new_runs.length === 1 ? '' : 's'} added to your Inbox.`
-                              : 'No new matching emails.',
+                              : 'No new matching emails.') + (r.note ? ` ${r.note}` : ''),
                           ),
                         )
                       }

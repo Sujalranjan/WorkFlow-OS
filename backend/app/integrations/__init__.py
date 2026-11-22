@@ -15,10 +15,11 @@ from app.integrations.base import (  # noqa: F401 - re-exported
 )
 from app.integrations.demo_crm import DEMO_CRM
 from app.integrations.gmail import GMAIL
+from app.integrations.hubspot import HUBSPOT
 from app.integrations.slack import SLACK
 
 # Order matters only for tie-breaking: classifiers are tried in this order (they never overlap).
-INTEGRATIONS: List[Integration] = [GMAIL, DEMO_CRM, SLACK]
+INTEGRATIONS: List[Integration] = [GMAIL, DEMO_CRM, HUBSPOT, SLACK]
 
 
 def get_integration(key: str) -> Optional[Integration]:

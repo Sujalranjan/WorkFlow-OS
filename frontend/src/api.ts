@@ -323,6 +323,25 @@ export interface Integrations {
     updated_at: string | null;
     updated_by: string | null;
   };
+  hubspot: {
+    configured: boolean;
+    source: 'settings' | 'environment' | null;
+    portal_id: number | null;
+    ui_domain: string | null;
+    status_property: string | null;
+    status_property_label: string | null;
+    status_value: string | null;
+    updated_at: string | null;
+    updated_by: string | null;
+  };
+}
+
+/** A writable HubSpot contact property (for choosing which one update_contact writes). */
+export interface HubSpotProperty {
+  name: string;
+  label: string;
+  type: string;
+  options: string[];
 }
 
 export const getIntegrations = () => request<Integrations>('/api/integrations');
@@ -335,3 +354,12 @@ export const disconnectGmail = () => request<Integrations>('/api/integrations/gm
 export const saveSlack = (bot_token: string, channel_id: string) =>
   request<Integrations>('/api/integrations/slack', { method: 'PUT', body: JSON.stringify({ bot_token, channel_id }) });
 export const removeSlack = () => request<Integrations>('/api/integrations/slack', { method: 'DELETE' });
+export const saveHubSpot = (access_token: string) =>
+  request<Integrations>('/api/integrations/hubspot', { method: 'PUT', body: JSON.stringify({ access_token }) });
+export const getHubSpotProperties = () => request<HubSpotProperty[]>('/api/integrations/hubspot/properties');
+export const saveHubSpotSettings = (status_property: string, status_value: string | null) =>
+  request<Integrations>('/api/integrations/hubspot/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ status_property, status_value }),
+  });
+export const removeHubSpot = () => request<Integrations>('/api/integrations/hubspot', { method: 'DELETE' });

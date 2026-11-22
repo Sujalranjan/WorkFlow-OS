@@ -9,6 +9,8 @@ export interface EmailTrigger {
   created_at: string;
   last_polled_at: string | null;
   last_error: string | null;
+  /** Informational message from the last check, e.g. how many emails are still to be queued. */
+  last_note?: string | null;
 }
 
 export type RunStatus =
@@ -70,5 +72,10 @@ export interface PollResult {
   polled_at: string;
   matched: number;
   new_runs: WorkflowRun[];
+  /** New matching emails still to be queued by the next check(s). */
+  backlog?: number;
+  /** Gmail reported no new messages, so nothing was searched. */
+  unchanged?: boolean;
+  note?: string | null;
   error: string | null;
 }

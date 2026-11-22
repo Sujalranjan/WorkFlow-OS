@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
 import {
+  HubSpotProperty,
   Integrations,
   Role,
   User,
   createApiKey,
   createUser,
   disconnectGmail,
+  getHubSpotProperties,
   getIntegrations,
   listApiKeys,
   listUsers,
   removeGmailClient,
+  removeHubSpot,
   removeSlack,
   revokeApiKey,
   saveGmailClient,
+  saveHubSpot,
+  saveHubSpotSettings,
   saveSlack,
   startGmailConnect,
   updateUser,
@@ -317,6 +322,7 @@ const IntegrationsSection: React.FC = () => {
       ) : (
         <>
           <GmailCard info={info.data} action={action} update={update} />
+          <HubSpotCard info={info.data} action={action} update={update} />
           <SlackCard info={info.data} action={action} update={update} />
         </>
       )}
@@ -534,6 +540,181 @@ const SlackCard: React.FC<CardProps> = ({ info, action, update }) => {
             </button>
           )}
         </div>
+      )}
+    </div>
+  );
+};
+
+const HubSpotCard: React.FC<CardProps> = ({ info, action, update }) => {
+  const hs = info.hubspot;
+  const [token, setToken] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [properties, setProperties] = useState<HubSpotProperty[] | null>(null);
+  const [property, setProperty] = useState('');
+  const [value, setValue] = useState('');
+  const busy = action.busy !== null;
+  const showTokenForm = !hs.configured || editing;
+  const chosen = properties?.find((p) => p.name === property);
+
+  const loadProperties = () =>
+    action.run('hubspot-properties', getHubSpotProperties).then((list) => {
+      if (!list) return;
+      setProperties(list);
+      setProperty(hs.status_property || '');
+      setValue(hs.status_value || '');
+    });
+
+  return (
+    <div className="subform">
+      <div className="card-head">
+        <h3>HubSpot</h3>
+        {hs.configured ? <Badge status="completed" label="Connected" /> : <Badge status="paused" label="Not set up" />}
+      </div>
+      {hs.configured && (
+        <p className="muted small">
+          {hs.portal_id ? `Account ${hs.portal_id}` : 'Connected'}
+          {hs.source === 'settings'
+            ? ` · saved by ${hs.updated_by || 'unknown'} ${timeAgo(hs.updated_at)}`
+            : ' · from HUBSPOT_ACCESS_TOKEN on the server'}
+        </p>
+      )}
+
+      {showTokenForm ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update(action.run('hubspot-save', () => saveHubSpot(token), 'HubSpot key checked and saved.')).then(() => {
+              setToken('');
+              setEditing(false);
+            });
+          }}
+        >
+          <p className="muted small">
+            In HubSpot, create a <strong>service key</strong> with the scopes <code>crm.objects.contacts.read</code>,{' '}
+            <code>crm.objects.contacts.write</code> and <code>crm.schemas.contacts.read</code>, then paste it here. An existing
+            private-app token also works.
+          </p>
+          <label className="field">
+            Service key or private-app token
+            <input
+              required
+              minLength={20}
+              type="password"
+              autoComplete="off"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </label>
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              Check and save
+            </button>
+            {editing && (
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        <>
+          <p className="muted small">
+            {hs.status_property ? (
+              <>
+                "Update contact" steps write <code>{hs.status_property_label || hs.status_property}</code>
+                {hs.status_value && (
+                  <>
+                    {' '}
+                    (default value <code>{hs.status_value}</code>)
+                  </>
+                )}
+                .
+              </>
+            ) : (
+              'Choose which contact property "Update contact" steps write. Until then those steps are blocked.'
+            )}
+          </p>
+          {properties ? (
+            <form
+              className="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                update(
+                  action.run('hubspot-settings', () => saveHubSpotSettings(property, value.trim() || null), 'HubSpot property saved.')
+                ).then(() => setProperties(null));
+              }}
+            >
+              <div className="form-row">
+                <label className="field">
+                  Contact property
+                  <select
+                    required
+                    value={property}
+                    onChange={(e) => {
+                      setProperty(e.target.value);
+                      setValue('');
+                    }}
+                  >
+                    <option value="">Choose…</option>
+                    {properties.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.label} ({p.name})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Default value (optional)
+                  {chosen && chosen.options.length > 0 ? (
+                    <select value={value} onChange={(e) => setValue(e.target.value)}>
+                      <option value="">None</option>
+                      {chosen.options.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Used when a run gives no value" />
+                  )}
+                </label>
+              </div>
+              <div className="actions">
+                <button type="submit" disabled={busy || !property}>
+                  Save property
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setProperties(null)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="actions">
+              {hs.source === 'settings' && (
+                <button disabled={busy} onClick={loadProperties}>
+                  {hs.status_property ? 'Change property' : 'Choose property'}
+                </button>
+              )}
+              <button className="btn-secondary" disabled={busy} onClick={() => setEditing(true)}>
+                Change key
+              </button>
+              {hs.source === 'settings' && (
+                <button
+                  className="btn-danger"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm('Remove the HubSpot key? HubSpot steps stop working until a key is saved again.')) {
+                      update(action.run('hubspot-remove', removeHubSpot, 'HubSpot key removed.'));
+                    }
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

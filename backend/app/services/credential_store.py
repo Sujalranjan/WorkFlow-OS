@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 GMAIL_TOKEN = "gmail"
 GMAIL_OAUTH_CLIENT = "gmail_oauth_client"
 SLACK = "slack"
+HUBSPOT = "hubspot"
 OAUTH_STATE_TTL = timedelta(minutes=10)
 
 
@@ -122,6 +123,20 @@ class CredentialStore(Repository):
                 .where(integration_credentials.c.name == name)
                 .values(ciphertext=self._encrypt(secret))
             )
+
+    def update_metadata(self, name: str, changes: Dict[str, Any], actor: Optional[str] = None) -> bool:
+        """Merge non-secret settings into an existing record (the secret is untouched)."""
+        current = self.info(name)
+        if current is None:
+            return False
+        merged = {**current.metadata, **changes}
+        with self.begin() as conn:
+            conn.execute(
+                update(integration_credentials)
+                .where(integration_credentials.c.name == name)
+                .values(metadata_json=merged, updated_at=_now().isoformat(), updated_by=actor or current.updated_by)
+            )
+        return True
 
     def get(self, name: str) -> Optional[StoredCredential]:
         """The decrypted record, or None if absent or unreadable with the current key."""

@@ -48,6 +48,18 @@ async function isCrmPage(url) {
   }
 }
 
+// HubSpot contact record pages and contacts-list searches (app.hubspot.com, app-eu1.hubspot.com).
+function isHubSpotContactPage(url) {
+  try {
+    const u = new URL(url);
+    if (!/^app(-[a-z0-9]+)?\.hubspot\.com$/.test(u.hostname)) return false;
+    if (/^\/contacts\/\d+\/(record\/0-1|contact)\/\d+/.test(u.pathname)) return true;
+    return /^\/contacts\/\d+\/(objects\/0-1|contacts)(\/|$)/.test(u.pathname) && !!u.searchParams.get("query");
+  } catch {
+    return false;
+  }
+}
+
 function originAndPath(url) {
   try {
     const u = new URL(url);
@@ -104,7 +116,7 @@ let lastNavigation = "";
 async function onNavigation(details) {
   if (details.frameId !== 0) return;
   const url = details.url;
-  if (!(isGmailSearch(url) || (await isCrmPage(url)))) return;
+  if (!(isGmailSearch(url) || isHubSpotContactPage(url) || (await isCrmPage(url)))) return;
   if (url === lastNavigation) return; // the same route fires several webNavigation events
   lastNavigation = url;
   await post(activityEvent("browser_navigation", { url }));

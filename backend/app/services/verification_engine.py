@@ -123,7 +123,7 @@ class VerificationEngine:
                 )
                 continue
 
-            # Case B: Step represents an external application (Gmail, CRM, Slack)
+            # Case B: Step represents an external application (Gmail, CRM, HubSpot, Slack)
             app_lower = step.application.lower()
             if any(ext in app_lower for ext in ["gmail", "crm", "salesforce", "hubspot", "slack", "teams"]):
                 # GmailApiExecutor, CrmApiExecutor, and SlackApiExecutor are supported.
@@ -141,7 +141,13 @@ class VerificationEngine:
                     act_norm == "send_notification"
                     or (step_res and step_res.executor_name == "SlackApiExecutor")
                 )
-                if not (is_gmail_allowed or is_crm_allowed or is_slack_allowed):
+                # Any executor declared by an integration in the action catalog has its own verifier.
+                from app.integrations import all_actions
+
+                is_catalog_executor = bool(step_res) and step_res.executor_name in {
+                    a.executor_name for a in all_actions().values()
+                }
+                if not (is_gmail_allowed or is_crm_allowed or is_slack_allowed or is_catalog_executor):
                     all_checks.append(
                         VerificationCheck(
                             execution_id=execution_id,

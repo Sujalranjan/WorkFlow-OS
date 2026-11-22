@@ -2,8 +2,11 @@
 
 Flow for one trigger:
 
-    poll()         read-only Gmail search "(<query>) after:<active_since>"; each message not yet in
-                   the workflow_runs ledger becomes a WorkflowRun in PENDING_APPROVAL. Nothing runs.
+    poll()         incremental and read-only: Gmail's change log says whether any message arrived
+                   since the last complete sync; only then are the ids matching
+                   "(<query>) after:<last sync - margin>" listed (every page). Each id not yet in the
+                   workflow_runs ledger becomes a WorkflowRun in PENDING_APPROVAL, oldest first, up to
+                   MAX_NEW_RUNS_PER_POLL; the rest wait for the next poll. Nothing runs.
     approve_run()  a person approves that run -> ExecutionPlanner (search_query + trigger_message_id)
                    -> ExecutionEngine (LIVE) -> VerificationEngine -> LearningEngine.
     resume_run()   if a step paused with NEEDS_INPUT (e.g. no CRM customer), a person supplies the
@@ -14,6 +17,7 @@ No step is ever executed without a per-run human decision, and the Gmail scope s
 
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Callable, Dict, List, Optional
 
 from app.models.automation import (
@@ -33,12 +37,15 @@ from app.repositories.execution_plan_repository import ExecutionPlanRepository
 from app.repositories.execution_repository import ExecutionRepository
 from app.services.execution_engine import ExecutionEngine
 from app.services.execution_planner import ExecutionPlanner
-from app.services.gmail_client import GmailApiClient
+from app.services.gmail_client import GmailApiClient, GmailHistoryExpired
 
 logger = logging.getLogger(__name__)
 
 GMAIL_TRIGGER_ACTION = "gmail.search_email"
-MAX_MESSAGES_PER_POLL = 25
+# New runs queued per poll; a larger backlog is worked through on the following polls.
+MAX_NEW_RUNS_PER_POLL = 50
+# Searches reach back this far before the last sync, covering clock skew and late Gmail indexing.
+SYNC_OVERLAP_SECONDS = 600
 
 _RUN_STATUS_FROM_EXECUTION = {
     ExecutionOverallStatus.COMPLETED: RunStatus.COMPLETED,
@@ -146,41 +153,70 @@ class TriggerService:
         elif not self.gmail.is_authenticated():
             error = "Gmail is not connected yet. Use Connect Gmail in Settings."
         else:
-            query = f"({trigger.gmail_query}) after:{trigger.active_since}"
             try:
-                found = self.gmail.search_messages(query=query, max_results=MAX_MESSAGES_PER_POLL)
-                result.matched = found.total_found
-                # Gmail returns newest first; queue oldest first so runs appear in arrival order.
-                for msg in reversed(found.messages):
-                    if self.repo.has_message(trigger.trigger_id, msg.message_id):
-                        continue
-                    run = WorkflowRun(
-                        trigger_id=trigger.trigger_id,
-                        workflow_id=trigger.workflow_id,
-                        gmail_query=trigger.gmail_query,
-                        source_email=SourceEmail(
-                            message_id=msg.message_id,
-                            thread_id=msg.thread_id,
-                            subject=msg.subject,
-                            sender=msg.sender,
-                            snippet=msg.snippet,
-                            received_at=msg.timestamp,
-                            attachment_names=[a.filename for a in msg.attachments],
-                        ),
-                    )
-                    if self.repo.insert_run_if_new(run):
-                        result.new_runs.append(run)
+                self._sync(trigger, result)
             except Exception as e:  # noqa: BLE001 - recorded on the trigger, never raised to the poller
                 logger.warning("Trigger %s poll failed: %s", trigger.trigger_id, e)
                 error = f"Gmail search failed: {e}"
 
         trigger.last_polled_at = now
         trigger.last_error = error
+        trigger.last_note = result.note
         self.repo.save_trigger(trigger)
         result.error = error
         if result.new_runs:
             logger.info("Trigger %s queued %d run(s) for approval", trigger.trigger_id, len(result.new_runs))
         return result
+
+    def _sync(self, trigger: EmailTrigger, result: PollResult) -> None:
+        """One incremental sync step; updates `trigger`'s sync position only once nothing is left behind."""
+        started = int(time.time())
+        if trigger.history_id:
+            try:
+                added, latest = self.gmail.messages_added_since(trigger.history_id)
+            except GmailHistoryExpired:
+                result.note = "Gmail's change history had expired, so every email since the last check was searched."
+            else:
+                if not added:
+                    trigger.history_id = latest
+                    result.unchanged = True
+                    return
+
+        # Bookmark taken before listing: anything arriving during this poll is seen by the next one.
+        bookmark = self.gmail.current_history_id()
+        since = max(trigger.active_since, (trigger.synced_until or trigger.active_since) - SYNC_OVERLAP_SECONDS)
+        ids = self.gmail.list_message_ids(query=f"({trigger.gmail_query}) after:{since}")
+        result.matched = len(ids)
+
+        # Gmail lists newest first; queue oldest first so runs appear in arrival order.
+        new_ids = [mid for mid in reversed(ids) if not self.repo.has_message(trigger.trigger_id, mid)]
+        batch = new_ids[:MAX_NEW_RUNS_PER_POLL]
+        result.backlog = len(new_ids) - len(batch)
+        for mid in batch:
+            msg = self.gmail.get_message_summary(mid)
+            run = WorkflowRun(
+                trigger_id=trigger.trigger_id,
+                workflow_id=trigger.workflow_id,
+                gmail_query=trigger.gmail_query,
+                source_email=SourceEmail(
+                    message_id=msg.message_id,
+                    thread_id=msg.thread_id,
+                    subject=msg.subject,
+                    sender=msg.sender,
+                    snippet=msg.snippet,
+                    received_at=msg.timestamp,
+                    attachment_names=[a.filename for a in msg.attachments],
+                ),
+            )
+            if self.repo.insert_run_if_new(run):
+                result.new_runs.append(run)
+
+        if result.backlog:
+            result.note = f"{result.backlog} more matching email(s) will be queued by the next check."
+        else:
+            # Everything up to now is processed: move the sync position forward.
+            trigger.synced_until = started
+            trigger.history_id = bookmark
 
     def poll_due(self) -> List[PollResult]:
         """Poll every enabled trigger whose interval has elapsed (called by the background scheduler)."""

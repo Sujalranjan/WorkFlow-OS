@@ -59,23 +59,43 @@ Each one is mergeable on its own, with tests on SQLite and Postgres.
   classifiers that only return their own actions and never overlap, and a broken status check
   that doesn't hide the others.
 
-### 3b: Gmail incremental sync (fixes the missed-email bug)
-- Store a `history_id` per trigger. Each poll reads `users.history.list(startHistoryId)` for added
-  messages, checks them against the trigger query, and pages through every result.
-- If the stored id expires (Gmail keeps about a week), fall back to a full search since the last
-  successful poll and say so on the trigger.
-- Migration `0003` (trigger sync state). A regression test with 60 new emails between two polls.
+### 3b: Gmail incremental sync (done, fixes the missed-email bug)
+- Each trigger stores its sync position (`history_id`, `synced_until`) in its record, so no
+  migration was needed. A poll first asks `users.history.list` whether any message was added
+  since `history_id`, and stops there if not (no search).
+- Otherwise it lists the ids of every match for `(<query>) after:<synced_until - 10 min>` (never
+  earlier than the trigger's start) across all pages, skips ids already in the run ledger, and
+  queues up to 50 new runs oldest first. The sync position only moves forward once nothing is left
+  behind, so a backlog is worked through over the following polls.
+- An expired history id falls back to a full search since the last sync, and a note on the trigger
+  says so. A Gmail failure mid-poll leaves the position unchanged; the next poll retries.
+- New read-only client methods: `current_history_id`, `messages_added_since`, `list_message_ids`.
+- Tests: 120 emails arriving at once are all queued exactly once and in order; no search runs
+  when nothing changed; expired history; failure mid-poll; paging in the client
+  (`test_gmail_sync.py`). The dashboard shows the poll note ("12 more emails will be queued...").
 
-### 3c: HubSpot
-- Settings: paste a private-app token; save checks it and its scopes (`crm.objects.contacts.read`,
-  `crm.objects.contacts.write`).
-- Catalog actions: `hubspot.find_contact` (by email; several matches pause for a person, as the Demo
-  CRM already does), `hubspot.update_contact` (one property, high risk, requires confirmation),
-  `hubspot.add_note` (a note attached to the contact).
-- Observation: HubSpot contact record pages and property edits in the browser extension.
-- Verification: re-read the contact and the note through the API.
-- A recorded-session test like `test_observed_to_execution` that discovers a Gmail -> HubSpot ->
-  Slack workflow and runs it against a fake HubSpot.
+### 3c: HubSpot (done)
+- Settings: paste a HubSpot **service key** (legacy private apps can no longer be created since
+  2026-10-26; an existing private-app token still works). Saving checks it against the contacts API
+  and records the account id; the key is encrypted and never shown again.
+- Settings also picks which contact property `hubspot.update_contact` writes, and an optional default
+  value (validated against the property's options). Until a property is chosen those steps are
+  BLOCKED (`NOT_CONFIGURED`), never guessed.
+- Catalog actions: `hubspot.find_contact` (low; exact email match, a record id, or text search;
+  none or several matches pause for a person with the same Inbox picker as the Demo CRM),
+  `hubspot.update_contact` (high, requires confirmation), `hubspot.add_note` (medium; note
+  associated with the contact, type 202).
+- Errors: 401 -> BLOCKED `AUTHENTICATION_REQUIRED`, 403 -> BLOCKED `MISSING_SCOPE`, 429 fails the step
+  (fail closed, run again later). Dry runs make no HubSpot calls.
+- Observation (best effort, HubSpot does not document its UI): contact record pages and
+  contacts-list searches (`app.hubspot.com`, `app-eu1.hubspot.com`) in the extension, plus a content
+  script that reports "note saved" / "property X saved" without reading note text or values.
+- Verification: re-read the property and the note (body and association) through the API. The
+  verification engine now accepts any executor declared in the action catalog instead of a
+  hard-coded list.
+- `tests/backend/test_hubspot.py`: fake HubSpot API (httpx MockTransport); client, executor,
+  verifier, classifiers, Settings, and a recorded Gmail -> HubSpot -> Slack routine discovered and
+  run end to end.
 
 ### 3d: Slack channel picker
 - Channel picker from `conversations.list` (scope `channels:read`) in Settings, replacing the typed

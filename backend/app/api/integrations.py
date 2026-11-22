@@ -1,6 +1,6 @@
 """Gmail and Slack connection settings (Settings page)."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,6 +25,15 @@ class GmailConnectRequest(BaseModel):
 
 class GmailConnectResponse(BaseModel):
     authorization_url: str
+
+
+class HubSpotTokenRequest(BaseModel):
+    access_token: str = Field(..., min_length=20, max_length=500)
+
+
+class HubSpotSettingsRequest(BaseModel):
+    status_property: str = Field(..., min_length=1, max_length=200)
+    status_value: Optional[str] = Field(default=None, max_length=500)
 
 
 class SlackSettingsRequest(BaseModel):
@@ -104,4 +113,39 @@ def save_slack(req: SlackSettingsRequest, actor: str = Depends(current_actor)) -
 def remove_slack() -> Dict[str, Any]:
     service = get_integration_service()
     service.remove_slack()
+    return service.describe()
+
+
+@router.put("/hubspot")
+def save_hubspot(req: HubSpotTokenRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_hubspot(req.access_token, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.get("/hubspot/properties")
+def hubspot_properties() -> List[Dict[str, Any]]:
+    try:
+        return get_integration_service().hubspot_properties()
+    except IntegrationError as e:
+        raise _bad_request(e)
+
+
+@router.put("/hubspot/settings")
+def save_hubspot_settings(req: HubSpotSettingsRequest, actor: str = Depends(current_actor)) -> Dict[str, Any]:
+    service = get_integration_service()
+    try:
+        service.save_hubspot_settings(req.status_property, req.status_value, actor)
+    except IntegrationError as e:
+        raise _bad_request(e)
+    return service.describe()
+
+
+@router.delete("/hubspot")
+def remove_hubspot() -> Dict[str, Any]:
+    service = get_integration_service()
+    service.remove_hubspot()
     return service.describe()

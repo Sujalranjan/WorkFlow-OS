@@ -27,6 +27,7 @@ from app import config
 from app.services.credential_store import (
     GMAIL_OAUTH_CLIENT,
     GMAIL_TOKEN,
+    HUBSPOT,
     SLACK,
     CredentialStore,
     get_credential_store,
@@ -228,7 +229,78 @@ class IntegrationService:
     def remove_slack(self) -> None:
         self.store.delete(SLACK)
 
+    # ---------------------------------------------------------------- hubspot
+
+    def _hubspot_client(self, token: Optional[str] = None):
+        from app.services.hubspot_client import HubSpotClient
+
+        return HubSpotClient(access_token=token, http_client=self._http_factory())
+
+    def save_hubspot(self, access_token: str, actor: str) -> Dict[str, Any]:
+        """Store a HubSpot service key (or legacy private-app token) after checking it can read contacts."""
+        token = access_token.strip()
+        if len(token) < 20:
+            raise IntegrationError("That does not look like a HubSpot access token.")
+        ok, detail = self._hubspot_client(token).check_access()
+        if not ok:
+            raise IntegrationError(f"HubSpot did not accept this token: {detail}")
+        account = self._hubspot_client(token).account_details() or {}
+        previous = self.store.info(HUBSPOT)
+        metadata = {
+            **(previous.metadata if previous else {}),  # keep the chosen status property on reconnect
+            "portal_id": account.get("portalId"),
+            "ui_domain": account.get("uiDomain"),
+        }
+        self.store.put(HUBSPOT, {"access_token": token}, metadata, actor)
+        return metadata
+
+    def hubspot_properties(self):
+        """Writable contact properties of the connected account (for the Settings picker)."""
+        from app.services.hubspot_client import HubSpotError
+
+        if not self.store.info(HUBSPOT):
+            raise IntegrationError("Connect HubSpot first.")
+        try:
+            return self._hubspot_client().list_contact_properties()
+        except HubSpotError as e:
+            raise IntegrationError(f"Could not list HubSpot properties: {e}")
+
+    def save_hubspot_settings(self, status_property: str, status_value: Optional[str], actor: str) -> Dict[str, Any]:
+        """Which contact property hubspot.update_contact writes, and the value used when a run has none."""
+        props = {p["name"]: p for p in self.hubspot_properties()}
+        chosen = props.get(status_property.strip())
+        if chosen is None:
+            raise IntegrationError(f"'{status_property}' is not a writable HubSpot contact property.")
+        value = (status_value or "").strip() or None
+        if value and chosen["options"] and value not in chosen["options"]:
+            raise IntegrationError(f"'{value}' is not one of the options of {chosen['label']}: {', '.join(chosen['options'])}.")
+        self.store.update_metadata(
+            HUBSPOT,
+            {"status_property": chosen["name"], "status_property_label": chosen["label"], "status_value": value},
+            actor,
+        )
+        return self.describe()["hubspot"]
+
+    def remove_hubspot(self) -> None:
+        self.store.delete(HUBSPOT)
+
     # ----------------------------------------------------------------- status
+
+    def _describe_hubspot(self) -> Dict[str, Any]:
+        info = self.store.info(HUBSPOT)
+        meta = info.metadata if info else {}
+        env = bool(os.getenv("HUBSPOT_ACCESS_TOKEN"))
+        return {
+            "configured": bool(info) or env,
+            "source": "settings" if info else ("environment" if env else None),
+            "portal_id": meta.get("portal_id"),
+            "ui_domain": meta.get("ui_domain"),
+            "status_property": meta.get("status_property"),
+            "status_property_label": meta.get("status_property_label"),
+            "status_value": meta.get("status_value"),
+            "updated_at": info.updated_at if info else None,
+            "updated_by": info.updated_by if info else None,
+        }
 
     def describe(self) -> Dict[str, Any]:
         """Configuration summary for Settings. No secrets, no network calls."""
@@ -249,6 +321,7 @@ class IntegrationService:
                 "client_id": client[0] if client else None,
                 "redirect_uri": self.redirect_uri,
             },
+            "hubspot": self._describe_hubspot(),
             "slack": {
                 "configured": bool(slack) or env_slack,
                 "source": "settings" if slack else ("environment" if env_slack else None),
